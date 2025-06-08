@@ -1,4 +1,4 @@
-console.log("[AI Portrait Generator] Script loaded .........................................................................................................");
+console.log("[AI Portrait Generator] Script loaded.");
 
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
@@ -11,6 +11,10 @@ Hooks.once("init", () => {
   });
 });
 
+Hooks.once("ready", () => {
+  console.log("[AI Portrait Generator] Ready hook executed.");
+});
+
 Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
   const actor = sheet.actor;
   if (actor.type !== "character") return;
@@ -18,11 +22,15 @@ Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
     label: "AI Portrait",
     class: "ai-portrait-generate",
     icon: "fas fa-magic",
-    onclick: () => generatePortrait(actor)
+    onclick: () => {
+      console.log("[AI Portrait Generator] Menu button clicked for:", actor.name);
+      generatePortrait(actor);
+    }
   });
 });
 
 async function generatePortrait(actor) {
+  console.log("[AI Portrait Generator] generatePortrait called");
   const openaiApiKey = game.settings.get("ai-portrait-generator", "apiKey");
   if (!openaiApiKey) {
     ui.notifications.warn("OpenAI API Key not set in module settings.");
@@ -50,8 +58,7 @@ async function generatePortrait(actor) {
     .slice(0, 5)
     .join(", ") || "no visible equipment";
 
-  const defaultPrompt = `
-Highly detailed digital portrait of a fantasy RPG character.
+  const defaultPrompt = `Highly detailed digital portrait of a fantasy RPG character.
 Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
@@ -61,28 +68,28 @@ Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
 Description: ${bio || "No additional description."}
-Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lighting.
-  `.trim();
+Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lighting.`;
 
   new Dialog({
     title: "Edit AI Prompt",
-    content: \`
+    content: `
       <form>
         <div class="form-group">
           <label>Edit prompt for AI generation:</label>
           <textarea id="prompt-text" rows="12" style="width:100%;">\${defaultPrompt}</textarea>
         </div>
-      </form>\`,
+      </form>`,
     buttons: {
       generate: {
         label: "Generate",
         callback: async (html) => {
           const prompt = html.find("#prompt-text")[0].value;
+          console.log("[AI Portrait Generator] Sending prompt:", prompt);
           const response = await fetch("https://api.openai.com/v1/images/generations", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": \`Bearer \${openaiApiKey}\`
+              "Authorization": `Bearer \${openaiApiKey}`
             },
             body: JSON.stringify({ prompt, n: 1, size: "512x512" })
           });
@@ -92,13 +99,13 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
           }
           const data = await response.json();
           const imageUrl = data.data[0]?.url;
-          const filename = \`portrait-\${actor.name.replace(/\s/g, "_")}.webp\`;
+          const filename = `portrait-\${actor.name.replace(/\s/g, "_")}.webp`;
           const blob = await (await fetch(imageUrl)).blob();
           const file = new File([blob], filename, { type: "image/webp" });
           const upload = await FilePicker.upload("data", "user/portraits", file, {}, { notify: true });
           const imagePath = upload.path;
           await actor.update({ img: imagePath });
-          ui.notifications.info(\`Updated portrait for \${actor.name}.\`);
+          ui.notifications.info(`Updated portrait for \${actor.name}.`);
         }
       },
       cancel: { label: "Cancel" }
