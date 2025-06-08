@@ -1,3 +1,5 @@
+console.log("[AI Portrait Generator] Script loaded .........................................................................................................");
+
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
     name: "OpenAI API Key",
