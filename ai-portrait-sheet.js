@@ -15,17 +15,14 @@ Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
 });
 
-Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
-  const actor = sheet.actor;
-  if (actor.type !== "character") return;
-  buttons.unshift({
+Hooks.on("dnd5e.actorSheetMenuItems", (sheet, items) => {
+  if (sheet.actor?.type !== "character") return;
+
+  items.push({
     label: "AI Portrait",
-    class: "ai-portrait-generate",
     icon: "fas fa-magic",
-    onclick: () => {
-      console.log("[AI Portrait Generator] Menu button clicked for:", actor.name);
-      generatePortrait(actor);
-    }
+    callback: () => generatePortrait(sheet.actor),
+    visible: true
   });
 });
 
