@@ -6,8 +6,8 @@
   "authors": [{ "name": "Bullseye1979" }],
   "minimumCoreVersion": "10",
   "compatibleCoreVersion": "13",
-  "scripts": ["scripts/ai-portrait-sheet.js"],
-  "url": "",
-  "manifest": "",
-  "download": ""
+  "scripts": ["ai-portrait-sheet.js"],
+  "url": "https://github.com/Bullseye1979/foundryvtt-ai-portrait-generator",
+  "manifest": "https://raw.githubusercontent.com/Bullseye1979/foundryvtt-ai-portrait-generator/main/module.json",
+  "download": "https://github.com/Bullseye1979/foundryvtt-ai-portrait-generator/archive/refs/heads/main.zip"
 }
