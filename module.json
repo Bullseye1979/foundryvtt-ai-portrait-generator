@@ -1,0 +1,13 @@
+{
+  "id": "ai-portrait-generator",
+  "title": "AI Portrait Generator",
+  "description": "Generate character portraits using DALL·E directly from the character sheet menu.",
+  "version": "1.0.0",
+  "authors": [{ "name": "Bullseye1979" }],
+  "minimumCoreVersion": "10",
+  "compatibleCoreVersion": "13",
+  "scripts": ["scripts/ai-portrait-sheet.js"],
+  "url": "",
+  "manifest": "",
+  "download": ""
+}
