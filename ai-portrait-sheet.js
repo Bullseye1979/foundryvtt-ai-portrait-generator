@@ -118,7 +118,8 @@ Description: ${bio || "No additional description."}`;
           const finalPrompt = html.find("#prompt-text").val()?.trim();
           if (!finalPrompt) return ui.notifications.warn("Prompt is empty.");
           ui.notifications.info("Generating image...");
-          await socketlibSocket.executeAsGM("generatePortraitImage", actor.id, finalPrompt);
+          await game.modules.get("socketlib").api.executeAsGM("ai-portrait-generator", "generatePortraitImage", actor.id, finalPrompt);
+
         }
       },
       cancel: { label: "Cancel" }
