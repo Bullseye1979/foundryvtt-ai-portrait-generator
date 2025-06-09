@@ -26,6 +26,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
     name: "ai-portrait",
     icon: "fas fa-magic",
     title: "Generate AI Portrait",
+    label: "🪄 AI Portrait"
     button: true,
     visible: actor.testUserPermission(game.user, "OWNER"),
     onClick: () => generatePortrait(actor)
@@ -72,7 +73,7 @@ Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
 Description: ${bio || "No additional description."}
-Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lighting.`;
+Style: Dungeons and Dragons, fantasy art, full color, vibrant colors, dynamic camera angles, atmospheric lighting, cinematic portrait. No cropping of face.`;
 
   new Dialog({
     title: "Edit AI Prompt",
