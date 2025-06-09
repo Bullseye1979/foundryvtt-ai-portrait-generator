@@ -20,7 +20,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   if (!expected || !(app instanceof expected)) return;
 
   const actor = app.document;
-  if (!actor || actor.type !== "character") return;
+  // if (!actor || actor.type !== "character") return;
 
   controls.push({
     name: "ai-portrait",
