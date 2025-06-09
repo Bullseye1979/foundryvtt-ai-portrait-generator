@@ -1,5 +1,9 @@
 console.log("[AI Portrait Generator] Script loaded");
 
+Hooks.once("socketlib.ready", () => {
+  window.aiPortraitSocket = game.modules.get("socketlib").api;
+});
+
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
     name: "OpenAI API Key",
@@ -118,8 +122,7 @@ Description: ${bio || "No additional description."}`;
           const finalPrompt = html.find("#prompt-text").val()?.trim();
           if (!finalPrompt) return ui.notifications.warn("Prompt is empty.");
           ui.notifications.info("Generating image...");
-          await game.modules.get("socketlib").api.executeAsGM("ai-portrait-generator", "generatePortraitImage", actor.id, finalPrompt);
-
+          await window.aiPortraitSocket.executeAsGM("ai-portrait-generator", "generatePortraitImage", actor.id, finalPrompt);
         }
       },
       cancel: { label: "Cancel" }
