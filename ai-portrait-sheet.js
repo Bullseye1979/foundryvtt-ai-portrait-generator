@@ -13,13 +13,13 @@ Hooks.once("init", () => {
     hint: "System prompt for GPT – defines how to enhance the character.",
     scope: "world", config: true, type: String, multiline: true,
     default: `You are enhancing a prompt for DALL·E to generate a portrait of a D&D character.
-Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, equipment, eye color, hair, skin tone, height, or weight.
+Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, equipment, eye color, hair, skin tone, height, weight, personality traits, ideals, bonds, flaws, faith, kin, appearance, or biography.
 You may add atmosphere, lighting, pose, art style – but not change or invent anything about the character.`
   });
 
   game.settings.register("ai-portrait-generator", "proxyUrl", {
     name: "Proxy Base URL",
-    hint: "Full URL of your CORS proxy endpoint (no ?args).",
+    hint: "Base URL of your CORS proxy endpoint (no ?args).",
     scope: "world", config: true, type: String,
     default: "https://corsproxy.ralfreschke.de"
   });
@@ -52,33 +52,48 @@ async function generatePortrait(actor) {
   const gender = system.details?.gender ?? "Unknown";
   const age = system.details?.age ?? "Unknown";
   const level = clsItem?.system?.levels ?? 1;
+  const faith = system.details?.faith ?? "";
+  const kin = system.details?.kin ?? "";
+  const traits = system.details?.trait ?? "";
+  const ideals = system.details?.ideal ?? "";
+  const bonds = system.details?.bond ?? "";
+  const flaws = system.details?.flaw ?? "";
+  const appearance = system.details?.appearance ?? "";
   const bio = system.details?.biography?.value?.replace(/<[^>]*>?/gm, "") ?? "";
-  const equipment = items
-    .filter(i => ["weapon", "equipment", "armor"].includes(i.type))
-    .map(i => i.name).slice(0, 5).join(", ") || "No visible equipment";
-
   const eyes = system.details?.eyes ?? "unknown";
   const hair = system.details?.hair ?? "unknown";
   const skin = system.details?.skin ?? "unknown";
   const height = system.details?.height ?? "unknown";
   const weight = system.details?.weight ?? "unknown";
 
+  const equipment = items
+    .filter(i => ["weapon", "equipment", "armor"].includes(i.type))
+    .map(i => i.name).slice(0, 5).join(", ") || "No visible equipment";
+
   const basePrompt = `Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
 Gender: ${gender}
 Age: ${age}
-Level: ${level}
+Height: ${height}
+Weight: ${weight}
+Eye Color: ${eyes}
+Hair: ${hair}
+Skin: ${skin}
+Faith: ${faith}
+Kin: ${kin}
 Alignment: ${alignment}
 Background: ${background}
 Equipment: ${equipment}
-Appearance:
-- Eye Color: ${eyes}
-- Hair: ${hair}
-- Skin: ${skin}
-- Height: ${height}
-- Weight: ${weight}
-Description: ${bio || "No additional description."}`;
+
+Personality Traits: ${traits}
+Ideals: ${ideals}
+Bonds: ${bonds}
+Flaws: ${flaws}
+Appearance: ${appearance}
+Biography: ${bio}
+
+Description should reflect these traits faithfully. Do not alter factual attributes like gender, age, race, class, equipment, or appearance. Focus on generating a rich and artistic portrait description for DALL·E without contradicting any values above.`;
 
   ui.notifications.info("Contacting GPT...");
 
@@ -95,7 +110,7 @@ Description: ${bio || "No additional description."}`;
           { role: "system", content: gptPrompt },
           { role: "user", content: basePrompt }
         ],
-        temperature: 0.7, max_tokens: 300
+        temperature: 0.7, max_tokens: 400
       })
     });
     const d = await resp.json();
