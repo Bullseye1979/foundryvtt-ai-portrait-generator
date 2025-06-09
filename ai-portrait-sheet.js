@@ -1,3 +1,4 @@
+
 console.log("[AI Portrait Generator] Script loaded.");
 
 Hooks.once("init", () => {
@@ -13,17 +14,34 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
-});
 
-Hooks.on("dnd5e.actorSheetMenuItems", (sheet, items) => {
-  if (sheet.actor?.type !== "character") return;
+  // Patch das Standard-Menü des DnD5e-Sheets
+  const DND5e = CONFIG.DND5E ?? {};
+  const sheetClass = DND5E.sheetClasses?.character?.["dnd5e.ActorSheet5eCharacter"];
 
-  items.push({
-    label: "AI Portrait",
-    icon: "fas fa-magic",
-    callback: () => generatePortrait(sheet.actor),
-    visible: true
-  });
+  if (sheetClass?.cls) {
+    const OriginalSheet = sheetClass.cls;
+    class PatchedSheet extends OriginalSheet {
+      static get defaultOptions() {
+        const options = super.defaultOptions;
+        options.menuItems = [
+          ...(options.menuItems ?? []),
+          {
+            name: "AI Portrait",
+            icon: "fas fa-magic",
+            callback: function () {
+              generatePortrait(this.actor);
+            }
+          }
+        ];
+        return options;
+      }
+    }
+    sheetClass.cls = PatchedSheet;
+    console.log("[AI Portrait Generator] Patched sheet menu.");
+  } else {
+    console.warn("[AI Portrait Generator] Could not patch sheet menu.");
+  }
 });
 
 async function generatePortrait(actor) {
