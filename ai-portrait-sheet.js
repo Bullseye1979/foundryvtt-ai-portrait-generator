@@ -16,20 +16,25 @@ Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
 });
 
-Hooks.on("getActorDirectoryEntryContext", (html, options) => {
-  options.push({
-    name: "Generate AI Portrait",
-    icon: '<i class="fas fa-magic"></i>',
-    condition: li => {
+Hooks.on("renderActorDirectory", (app, html) => {
+  html.find(".directory-list .directory-item.actor").each((i, el) => {
+    const li = html.find(el);
+    li.off("contextmenu.aiPortrait");
+    li.on("contextmenu.aiPortrait", event => {
+      event.preventDefault();
       const actor = game.actors.get(li.data("documentId"));
-      return actor?.type === "character" && actor.testUserPermission(game.user, "OWNER");
-    },
-    callback: li => {
-      const actor = game.actors.get(li.data("documentId"));
-      generatePortrait(actor);
-    }
+      if (actor?.type === "character" && actor.testUserPermission(game.user, "OWNER")) {
+        const menu = new ContextMenu($(document.body), ".context-menu", [
+          {
+            name: "Generate AI Portrait",
+            icon: '<i class="fas fa-magic"></i>',
+            callback: () => generatePortrait(actor)
+          }
+        ]);
+        menu.render(event);
+      }
+    });
   });
-  console.log("[AI Portrait Generator] Context menu entry added.");
 });
 
 async function generatePortrait(actor) {
