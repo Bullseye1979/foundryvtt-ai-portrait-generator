@@ -3,17 +3,18 @@ console.log("[AI Portrait Generator] Script loaded");
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
     name: "OpenAI API Key",
-    hint: "Enter your OpenAI API key with access to DALL·E and GPT-3.5",
+    hint: "Enter your OpenAI API key with DALL·E and GPT access",
     scope: "world",
     config: true,
     type: String,
     default: "",
+    onChange: () => window.location.reload(),
     restricted: true
   });
 
   game.settings.register("ai-portrait-generator", "gptPrompt", {
-    name: "GPT Prompt for Optimization",
-    hint: "Prompt to send to GPT-3.5 for improving the DALL·E prompt",
+    name: "GPT Prompt Instruction",
+    hint: "Instruction for GPT to improve DALL·E prompt",
     scope: "world",
     config: true,
     type: String,
@@ -27,13 +28,13 @@ Hooks.once("init", () => {
 - Ensure that each hand only has 5 fingers. Persons only have 2 arms and 2 legs. Avoid deformed faces and bodies.
 - Ensure descriptions are not inappropriate or suggestive in any way.
 - The picture is a portrait. Ensure that the face is always fully visible and centered.
-- Avoid: Full body pictures`
+- Avoid: Full body pictures.`
   });
 });
 
 Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   const actor = app.document;
-  if (!actor) return;
+  if (!actor || !actor.testUserPermission(game.user, "OWNER")) return;
 
   controls.push({
     name: "ai-portrait",
@@ -41,83 +42,19 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
     label: "Generate AI Portrait",
     title: "Generate AI Portrait",
     button: true,
-    visible: actor.testUserPermission(game.user, "OWNER"),
     onClick: () => generatePortrait(actor)
   });
 });
 
 async function generatePortrait(actor) {
-  const openaiApiKey = game.settings.get("ai-portrait-generator", "apiKey");
-  if (!openaiApiKey) {
-    ui.notifications.warn("OpenAI API Key not set.");
+  const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
+  const gptInstruction = game.settings.get("ai-portrait-generator", "gptPrompt");
+
+  if (!apiKey) {
+    ui.notifications.warn("OpenAI API Key not set in module settings.");
     return;
   }
 
-  const promptBase = buildPromptFromActor(actor);
-  const gptPrompt = game.settings.get("ai-portrait-generator", "gptPrompt");
-
-  // Anfrage an GPT-3.5 zur Prompt-Optimierung
-  const optimizedPrompt = await optimizeWithGPT(openaiApiKey, gptPrompt, promptBase);
-  if (!optimizedPrompt) {
-    ui.notifications.error("GPT prompt optimization failed.");
-    return;
-  }
-
-  const dialog = new Dialog({
-    title: "Edit AI Prompt",
-    content: `
-      <form>
-        <div class="form-group">
-          <label>Final prompt for DALL·E generation:</label>
-          <textarea id="prompt-text" rows="12" style="width:100%;">${optimizedPrompt}</textarea>
-        </div>
-      </form>`,
-    buttons: {
-      generate: {
-        label: "Generate",
-        callback: async (html) => {
-          const prompt = html.find("#prompt-text").val();
-          ui.notifications.info("Generating portrait...");
-
-          const response = await fetch("https://api.openai.com/v1/images/generations", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${openaiApiKey}`
-            },
-            body: JSON.stringify({ prompt, n: 1, size: "1024x1024", response_format: "b64_json" })
-          });
-
-          if (!response.ok) {
-            ui.notifications.error("OpenAI error: " + response.statusText);
-            return;
-          }
-
-          const data = await response.json();
-          const base64 = data.data[0].b64_json;
-          const binary = atob(base64);
-          const array = Uint8Array.from(binary, c => c.charCodeAt(0));
-          const filename = `portrait-${actor.name.replace(/\s/g, "_")}-${Date.now()}.webp`;
-          const file = new File([array], filename, { type: "image/webp" });
-
-          const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
-          const imagePath = upload.path;
-
-          await actor.update({ img: imagePath });
-          actor.sheet.render(true);
-
-          ui.notifications.info("Portrait updated.");
-        }
-      },
-      cancel: { label: "Cancel" }
-    },
-    default: "generate"
-  });
-
-  dialog.render(true);
-}
-
-function buildPromptFromActor(actor) {
   const { name, system, items } = actor;
   const clsItem = items.find(i => i.type === "class");
   const cls = clsItem?.name ?? "adventurer";
@@ -139,7 +76,7 @@ function buildPromptFromActor(actor) {
     .slice(0, 5)
     .join(", ") || "no visible equipment";
 
-  return `Digital portrait of a fantasy RPG character.
+  const basePrompt = `Digital portrait of a fantasy RPG character.
 Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
@@ -148,34 +85,96 @@ Age: ${age}, Height: ${height}, Weight: ${weight}
 Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
-Description: ${bio}
-Style: cinematic, colorful, dramatic lighting, centered portrait.`;
-}
+Description: ${bio || "No additional description."}
+Style: cinematic, centered, colorful, atmospheric lighting, portrait-focused.`;
 
-async function optimizeWithGPT(apiKey, instruction, promptBase) {
-  const messages = [
-    { role: "system", content: instruction },
-    { role: "user", content: promptBase }
-  ];
+  const dialog = new Dialog({
+    title: "Edit AI Prompt",
+    content: `<form><div class="form-group"><label>Prompt for GPT Optimization:</label>
+      <textarea id="prompt-text" rows="12" style="width:100%;">${basePrompt}</textarea></div></form>`,
+    buttons: {
+      generate: {
+        label: "Generate",
+        callback: async (html) => {
+          const prompt = html.find("#prompt-text").val();
+          if (!prompt || prompt.length < 30) {
+            ui.notifications.warn("Prompt too short.");
+            return;
+          }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
+          ui.notifications.info("Sending prompt to GPT...");
+
+          // GPT OPTIMIZATION STEP
+          const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: "gpt-3.5-turbo",
+              messages: [
+                { role: "system", content: gptInstruction },
+                { role: "user", content: prompt }
+              ],
+              max_tokens: 750,
+              temperature: 0.7
+            })
+          });
+
+          const gptData = await gptResponse.json();
+          const optimizedPrompt = gptData.choices?.[0]?.message?.content?.trim();
+
+          if (!optimizedPrompt) {
+            ui.notifications.error("GPT did not return a usable prompt.");
+            return;
+          }
+
+          ui.notifications.info("Generating portrait with DALL·E...");
+
+          // DALL·E IMAGE GENERATION
+          const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              prompt: optimizedPrompt,
+              n: 1,
+              size: "1024x1024",
+              response_format: "b64_json"
+            })
+          });
+
+          const dalleData = await dalleResponse.json();
+          const base64 = dalleData.data?.[0]?.b64_json;
+
+          if (!base64) {
+            ui.notifications.error("DALL·E did not return an image.");
+            return;
+          }
+
+          // Convert to file
+          const binary = atob(base64);
+          const array = Uint8Array.from(binary, c => c.charCodeAt(0));
+          const file = new File([array], `portrait-${actor.id}.webp`, { type: "image/webp" });
+
+          const upload = await foundry.applications.apps.FilePicker.implementation.upload(
+            "data", "user/portraits", file, { overwrite: true }, { notify: true }
+          );
+
+          const imagePath = upload.path;
+          await actor.update({ img: imagePath });
+          actor.sheet.render(true);
+
+          ui.notifications.info("Portrait generation complete.");
+        }
+      },
+      cancel: { label: "Cancel" }
     },
-    body: JSON.stringify({
-      model: "gpt-3.5-turbo",
-      messages,
-      max_tokens: 500
-    })
+    default: "generate"
   });
 
-  if (!response.ok) {
-    console.error("GPT fetch failed", await response.text());
-    return null;
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || null;
+  dialog.render(true);
 }
