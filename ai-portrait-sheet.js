@@ -27,54 +27,7 @@ Hooks.once("init", () => {
   });
 });
 
-Hooks.once("ready", async () => {
-  if (game.user.isGM) {
-    game.socket.on("module.ai-portrait-generator", async ({ actorId, prompt }) => {
-      const actor = game.actors.get(actorId);
-      const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
-
-      if (!actor || !apiKey) return;
-
-      const fetch = require("node-fetch");
-      const fs = require("fs");
-      const path = require("path");
-
-      const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          prompt,
-          model: "dall-e-3",
-          n: 1,
-          size: "1024x1024",
-          response_format: "url"
-        })
-      });
-
-      const dalleData = await dalleResponse.json();
-      const imageUrl = dalleData.data?.[0]?.url;
-      if (!imageUrl) return console.warn("No image URL received.");
-
-      const imgRes = await fetch(imageUrl);
-      const buffer = await imgRes.buffer();
-
-      const timestamp = Date.now();
-      const safeName = actor.name.replace(/\s/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
-      const fileName = `portrait-${safeName}-${timestamp}.webp`;
-      const outPath = path.join("public", "user", "portraits", fileName);
-
-      fs.writeFileSync(outPath, buffer);
-      const relativePath = `user/portraits/${fileName}`;
-
-      await actor.update({ img: `${relativePath}?cb=${timestamp}` });
-      console.log(`[AI Portrait Generator] Saved portrait for ${actor.name}`);
-    });
-  }
-});
-
+// CLIENT-SIDE UI
 Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   const actor = app.document;
   if (!actor) return;
@@ -162,13 +115,10 @@ Description: ${bio || "No additional description."}`;
       generate: {
         label: "Generate",
         callback: async (html) => {
-          let finalPrompt = html.find("#prompt-text").val()?.trim();
-          if (finalPrompt.length > 1000) finalPrompt = finalPrompt.slice(0, 1000);
+          const finalPrompt = html.find("#prompt-text").val()?.trim();
+          if (!finalPrompt) return ui.notifications.warn("Prompt is empty.");
           ui.notifications.info("Generating image...");
-          game.socket.emit("module.ai-portrait-generator", {
-            actorId: actor.id,
-            prompt: finalPrompt
-          });
+          await socketlibSocket.executeAsGM("generatePortraitImage", actor.id, finalPrompt);
         }
       },
       cancel: { label: "Cancel" }
@@ -176,3 +126,53 @@ Description: ${bio || "No additional description."}`;
     default: "generate"
   }).render(true);
 }
+
+// SERVER-SIDE HANDLER
+Hooks.once("socketlib.ready", () => {
+  socketlib.registerModule("ai-portrait-generator").register("generatePortraitImage", async (actorId, prompt) => {
+    const actor = game.actors.get(actorId);
+    const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
+    if (!actor || !apiKey) return;
+
+    const fetch = require("node-fetch");
+    const fs = require("fs");
+    const path = require("path");
+
+    try {
+      const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          prompt,
+          model: "dall-e-3",
+          n: 1,
+          size: "1024x1024",
+          response_format: "url"
+        })
+      });
+
+      const dalleData = await dalleResponse.json();
+      const imageUrl = dalleData.data?.[0]?.url;
+      if (!imageUrl) throw new Error("No image URL returned from DALL·E");
+
+      const imageResponse = await fetch(imageUrl);
+      const buffer = await imageResponse.buffer();
+
+      const timestamp = Date.now();
+      const safeName = actor.name.replace(/\s/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+      const fileName = `portrait-${safeName}-${timestamp}.webp`;
+      const filePath = path.join("public", "user", "portraits", fileName);
+
+      fs.writeFileSync(filePath, buffer);
+
+      await actor.update({ img: `user/portraits/${fileName}?cb=${timestamp}` });
+      ui.notifications.info(`Portrait updated for ${actor.name}`);
+    } catch (error) {
+      console.error("[AI Portrait Generator] Error:", error);
+      ui.notifications.error("Failed to generate or save image.");
+    }
+  });
+});
