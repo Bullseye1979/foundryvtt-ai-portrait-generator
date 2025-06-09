@@ -20,7 +20,8 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
     name: "ai-portrait",
     icon: "fas fa-magic",
     title: "Generate AI Portrait",
-    text: "Generate AI Portrait",
+    label: "🪄 Generate AI Portrait",
+    title: "Generate AI Portrait",
     button: true,
     visible: actor.testUserPermission(game.user, "OWNER"),
     onClick: () => generatePortrait(actor)
@@ -104,7 +105,7 @@ Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic po
           const array = Uint8Array.from(binary, c => c.charCodeAt(0));
           const file = new File([array], `portrait-${actor.name.replace(/\s/g, "_")}.webp`, { type: "image/webp" });
 
-          const upload = await FilePicker.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
+          const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
           const imagePath = upload.path;
           await actor.update({ img: imagePath });
 
