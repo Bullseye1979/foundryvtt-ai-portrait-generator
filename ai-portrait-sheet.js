@@ -1,10 +1,10 @@
 
-console.log("[AI Portrait Generator] Script loaded.");
+console.log("[AI Portrait Generator] Script started");
 
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
     name: "OpenAI API Key",
-    hint: "Enter your OpenAI API key with DALL·E access",
+    hint: "Your DALL·E-enabled API key",
     scope: "world",
     config: true,
     type: String,
@@ -12,30 +12,21 @@ Hooks.once("init", () => {
   });
 });
 
-Hooks.once("ready", () => {
-  console.log("[AI Portrait Generator] Ready hook executed.");
-});
+Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
+  const actor = app.document;
+  if (!actor || actor.type !== "character") return;
+  if (app.constructor.name !== "ActorSheet5eCharacter") return;
 
-Hooks.on("renderActorDirectory", (app, htmlElement) => {
-  const html = $(htmlElement);
-  html.find(".directory-list .directory-item.actor").each((i, el) => {
-    const li = html.find(el);
-    li.off("contextmenu.aiPortrait");
-    li.on("contextmenu.aiPortrait", event => {
-      event.preventDefault();
-      const actor = game.actors.get(li.data("documentId"));
-      if (actor?.type === "character" && actor.testUserPermission(game.user, "OWNER")) {
-        const menu = new ContextMenu($(document.body), ".context-menu", [
-          {
-            name: "Generate AI Portrait",
-            icon: '<i class="fas fa-magic"></i>',
-            callback: () => generatePortrait(actor)
-          }
-        ]);
-        menu.render(event);
-      }
-    });
+  controls.push({
+    name: "ai-portrait",
+    icon: "fas fa-magic",
+    title: "Generate AI Portrait",
+    button: true,
+    visible: actor.testUserPermission(game.user, "OWNER"),
+    onClick: () => generatePortrait(actor)
   });
+
+  console.log("[AI Portrait Generator] Menu button added to sheet.");
 });
 
 async function generatePortrait(actor) {
