@@ -67,7 +67,7 @@ Visible Equipment: ${equipment}
 Description: ${bio || "No additional description."}
 Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head cropping, atmospheric lighting.`;
 
-  new foundry.applications.api.Dialog({
+  new foundry.applications.api.ApplicationV2.dialogs.Dialog({
     title: "Edit AI Prompt",
     content: `
       <form>
@@ -76,8 +76,9 @@ Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head c
           <textarea id="prompt-text" rows="12" style="width:100%;">${defaultPrompt}</textarea>
         </div>
       </form>`,
-    buttons: {
-      generate: {
+    config: {
+    buttons: [
+      { label: "Generate", icon: "fas fa-magic", callback: async (html) =>
         label: "Generate",
         callback: async (html) => {
           const prompt = html.querySelector("#prompt-text").value;
@@ -113,8 +114,9 @@ Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head c
           ui.notifications.info("Portrait generation complete.");
         }
       },
-      cancel: { label: "Cancel" }
-    },
-    default: "generate"
+      { label: "Cancel", icon: "fas fa-times", callback: () => {} }
+    ],
+    defaultButton: 0
+  }
   }).render(true);
 }
