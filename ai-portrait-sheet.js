@@ -9,6 +9,15 @@ Hooks.once("init", () => {
     type: String,
     default: ""
   });
+
+  game.settings.register("ai-portrait-generator", "promptStyle", {
+    name: "Base Style Prompt",
+    hint: "This style prompt will be prepended to each AI request (e.g. 'Fantasy art, cinematic lighting...')",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "Fantasy RPG portrait, cinematic lighting, centered face, vibrant colors"
+  });
 });
 
 Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
@@ -28,6 +37,8 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
 
 async function generatePortrait(actor) {
   const openaiApiKey = game.settings.get("ai-portrait-generator", "apiKey");
+  const promptStyle = game.settings.get("ai-portrait-generator", "promptStyle") || "";
+
   if (!openaiApiKey) {
     ui.notifications.warn("OpenAI API Key not set in module settings.");
     return;
@@ -54,8 +65,7 @@ async function generatePortrait(actor) {
     .slice(0, 5)
     .join(", ") || "no visible equipment";
 
-  const defaultPrompt = `Highly detailed fantasy RPG portrait.
-Name: ${name}
+  const dynamicPrompt = `Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
 Gender: ${gender}
@@ -63,9 +73,9 @@ Age: ${age}, Height: ${height}, Weight: ${weight}
 Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
-Description: ${bio || "No additional description."}
-Style: dramatic fantasy portrait, centered face, atmospheric, colorful, dynamic lighting.
-Focus: Face centered, head not cropped, portrait orientation, upper body visible.`;
+Description: ${bio || "No additional description."}`;
+
+  const fullPrompt = `${promptStyle}\n${dynamicPrompt}`;
 
   new Dialog({
     title: "Edit AI Prompt",
@@ -73,7 +83,7 @@ Focus: Face centered, head not cropped, portrait orientation, upper body visible
       <form>
         <div class="form-group">
           <label>Edit prompt for AI generation:</label>
-          <textarea id="prompt-text" rows="12" style="width:100%;">${defaultPrompt}</textarea>
+          <textarea id="prompt-text" rows="12" style="width:100%;">${fullPrompt}</textarea>
         </div>
       </form>`,
     buttons: {
@@ -101,19 +111,16 @@ Focus: Face centered, head not cropped, portrait orientation, upper body visible
           const base64 = data.data[0].b64_json;
           const binary = atob(base64);
           const array = Uint8Array.from(binary, c => c.charCodeAt(0));
-          const timestamp = Date.now();
-          const filename = `portrait-${actor.name.replace(/\s/g, "_")}-${timestamp}.webp`;
+          const random = Math.floor(Math.random() * 999999);
+          const filename = `portrait-${actor.name.replace(/\s/g, "_")}-${random}.webp`;
           const file = new File([array], filename, { type: "image/webp" });
 
           const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
-          const imagePath = `${upload.path}?v=${timestamp}`;
+          const imagePath = upload.path;
 
-          await actor.update({
-            img: imagePath,
-            "prototypeToken.texture.src": imagePath
-          });
-
+          await actor.update({ img: imagePath });
           actor.sheet.render(true);
+
           ui.notifications.info("Portrait generation complete.");
         }
       },
