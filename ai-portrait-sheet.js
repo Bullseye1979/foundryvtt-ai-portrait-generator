@@ -28,7 +28,8 @@ Hooks.once("init", () => {
 - Ensure that each hand only has 5 fingers. Persons only have 2 arms and 2 legs. Avoid deformed faces and bodies.
 - Ensure descriptions are not inappropriate or suggestive in any way.
 - The picture is a portrait. Ensure that the face is always fully visible and centered.
-- Avoid: Full body pictures.`,
+- Avoid: Full body pictures.
+- No deformed faces`,
     multiline: true
   });
 });
@@ -106,7 +107,7 @@ Description: ${bio || "No additional description."}`;
           { role: "user", content: baseDescription }
         ],
         temperature: 0.7,
-        max_tokens: 500
+        max_tokens: 350
       })
     });
 
