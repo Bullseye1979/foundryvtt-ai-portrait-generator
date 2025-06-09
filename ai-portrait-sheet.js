@@ -155,12 +155,15 @@ Description: ${bio || "No additional description."}`;
             const proxyUrl = `/ai-portrait-proxy?url=${encodeURIComponent(imageUrl)}`;
             const imgResponse = await fetch(proxyUrl);
             const blob = await imgResponse.blob();
-            const file = new File([blob], `portrait-${actor.name.replace(/\s/g, "_")}.webp`, { type: blob.type });
+            const timestamp = Date.now();
+            const safeName = actor.name.replace(/\s/g, "_");
+            const filename = `portrait-${safeName}-${timestamp}.webp`;
+            const file = new File([blob], filename, { type: blob.type });
+
 
             const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
             const imagePath = upload.path;
-
-            await actor.update({ img: `${imagePath}?cb=${Date.now()}` });
+            await actor.update({ img: imagePath });
             actor.sheet.render(true);
 
             ui.notifications.info("Portrait updated.");
