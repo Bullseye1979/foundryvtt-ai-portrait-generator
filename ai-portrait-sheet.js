@@ -1,4 +1,3 @@
-
 console.log("[AI Portrait Generator] Script loaded");
 
 Hooks.once("init", () => {
@@ -19,7 +18,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   controls.push({
     name: "ai-portrait",
     icon: "fas fa-magic",
-    label: "🪄 Generate AI Portrait",
+    label: "Generate AI Portrait",
     title: "Generate AI Portrait",
     button: true,
     visible: actor.testUserPermission(game.user, "OWNER"),
@@ -55,7 +54,7 @@ async function generatePortrait(actor) {
     .slice(0, 5)
     .join(", ") || "no visible equipment";
 
-  const defaultPrompt = `Dynamic, vibrant digital portrait of a fantasy RPG character in full view.
+  const defaultPrompt = `Highly detailed fantasy RPG portrait.
 Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
@@ -65,7 +64,8 @@ Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
 Description: ${bio || "No additional description."}
-Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head cropping, atmospheric lighting.`;
+Style: dramatic fantasy portrait, centered face, atmospheric, colorful, dynamic lighting.
+Focus: Face centered, head not cropped, portrait orientation, upper body visible.`;
 
   new Dialog({
     title: "Edit AI Prompt",
@@ -80,8 +80,7 @@ Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head c
       generate: {
         label: "Generate",
         callback: async (html) => {
-          const prompt = html.find("#prompt-text").val()
-
+          const prompt = html.find("#prompt-text").val();
           ui.notifications.info("Starting AI Portrait generation...");
 
           const response = await fetch("https://api.openai.com/v1/images/generations", {
@@ -102,14 +101,19 @@ Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head c
           const base64 = data.data[0].b64_json;
           const binary = atob(base64);
           const array = Uint8Array.from(binary, c => c.charCodeAt(0));
-          const file = new File([array], `portrait-${actor.name.replace(/\s/g, "_")}.webp`, { type: "image/webp" });
+          const timestamp = Date.now();
+          const filename = `portrait-${actor.name.replace(/\s/g, "_")}-${timestamp}.webp`;
+          const file = new File([array], filename, { type: "image/webp" });
 
           const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
-          const imagePath = upload.path;
+          const imagePath = `${upload.path}?v=${timestamp}`;
 
-          await actor.update({ img: imagePath });
-          actor.sheet.render(true);  // Erneut öffnen und anzeigen
+          await actor.update({
+            img: imagePath,
+            "prototypeToken.texture.src": imagePath
+          });
 
+          actor.sheet.render(true);
           ui.notifications.info("Portrait generation complete.");
         }
       },
