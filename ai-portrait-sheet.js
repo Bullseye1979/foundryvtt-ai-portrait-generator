@@ -16,7 +16,8 @@ Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
 });
 
-Hooks.on("renderActorDirectory", (app, html) => {
+Hooks.on("renderActorDirectory", (app, htmlElement) => {
+  const html = $(htmlElement);
   html.find(".directory-list .directory-item.actor").each((i, el) => {
     const li = html.find(el);
     li.off("contextmenu.aiPortrait");
