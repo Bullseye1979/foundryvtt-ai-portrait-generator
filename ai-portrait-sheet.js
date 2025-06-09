@@ -12,21 +12,23 @@ Hooks.once("init", () => {
   });
 });
 
-Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
-  const actor = app.document;
+Hooks.on("renderActorSheet", (app, html) => {
+  const actor = app.actor;
   if (!actor || actor.type !== "character") return;
-  if (app.constructor.name !== "ActorSheet5eCharacter") return;
 
-  controls.push({
-    name: "ai-portrait",
-    icon: "fas fa-magic",
-    title: "Generate AI Portrait",
-    button: true,
-    visible: actor.testUserPermission(game.user, "OWNER"),
-    onClick: () => generatePortrait(actor)
-  });
+  const titleBar = html.find(".app-header .window-title");
+  if (!titleBar.length) return;
 
-  console.log("[AI Portrait Generator] Menu button added to sheet.");
+  if (titleBar.find(".ai-portrait-icon").length) return;
+
+  const icon = $(`
+    <a class="ai-portrait-icon" title="Generate AI Portrait" style="margin-left:6px;cursor:pointer;">
+      <i class="fas fa-magic"></i>
+    </a>
+  `);
+  icon.on("click", () => generatePortrait(actor));
+  titleBar.append(icon);
+  console.log("[AI Portrait Generator] Icon added to sheet header");
 });
 
 async function generatePortrait(actor) {
@@ -58,15 +60,15 @@ async function generatePortrait(actor) {
     .join(", ") || "no visible equipment";
 
   const defaultPrompt = `Highly detailed digital portrait of a fantasy RPG character.
-Name: ${name}
-Class: ${cls}${subclass ? ` (${subclass})` : ""}
-Race: ${race}
-Gender: ${gender}
-Age: ${age}, Height: ${height}, Weight: ${weight}
-Level: ${level}, Alignment: ${alignment}
-Background: ${background}
-Visible Equipment: ${equipment}
-Description: ${bio || "No additional description."}
+Name: \${name}
+Class: \${cls}\${subclass ? ` (\${subclass})` : ""}
+Race: \${race}
+Gender: \${gender}
+Age: \${age}, Height: \${height}, Weight: \${weight}
+Level: \${level}, Alignment: \${alignment}
+Background: \${background}
+Visible Equipment: \${equipment}
+Description: \${bio || "No additional description."}
 Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lighting.`;
 
   new Dialog({
@@ -75,7 +77,7 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
       <form>
         <div class="form-group">
           <label>Edit prompt for AI generation:</label>
-          <textarea id="prompt-text" rows="12" style="width:100%;">${defaultPrompt}</textarea>
+          <textarea id="prompt-text" rows="12" style="width:100%;">\${defaultPrompt}</textarea>
         </div>
       </form>`,
     buttons: {
@@ -87,7 +89,7 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${openaiApiKey}`
+              "Authorization": `Bearer \${openaiApiKey}`
             },
             body: JSON.stringify({ prompt, n: 1, size: "512x512" })
           });
@@ -97,13 +99,13 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
           }
           const data = await response.json();
           const imageUrl = data.data[0]?.url;
-          const filename = `portrait-${actor.name.replace(/\s/g, "_")}.webp`;
+          const filename = `portrait-\${actor.name.replace(/\s/g, "_")}.webp`;
           const blob = await (await fetch(imageUrl)).blob();
           const file = new File([blob], filename, { type: "image/webp" });
           const upload = await FilePicker.upload("data", "user/portraits", file, {}, { notify: true });
           const imagePath = upload.path;
           await actor.update({ img: imagePath });
-          ui.notifications.info(`Updated portrait for ${actor.name}.`);
+          ui.notifications.info(`Updated portrait for \${actor.name}.`);
         }
       },
       cancel: { label: "Cancel" }
