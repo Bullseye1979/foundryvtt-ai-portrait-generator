@@ -16,8 +16,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   console.log("[AI Portrait] Hook triggered:", app.constructor.name);
 
   // Nur auf DnD5e Charakter-Sheets reagieren
-  const expected = CONFIG.Actor.sheetClasses.character["dnd5e.ActorSheet5eCharacter"]?.cls;
-  if (!expected || !(app instanceof expected)) return;
+  if (!app.actor || app.actor.type !== "character") return;
 
   const actor = app.document;
   if (!actor || actor.type !== "character") return;
