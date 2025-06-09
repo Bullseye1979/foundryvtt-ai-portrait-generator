@@ -106,7 +106,7 @@ Description: ${bio || "No additional description."}`;
           { role: "user", content: baseDescription }
         ],
         temperature: 0.7,
-        max_tokens: 750
+        max_tokens: 500
       })
     });
 
@@ -159,7 +159,7 @@ Description: ${bio || "No additional description."}`;
             const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
             const imagePath = upload.path;
 
-            await actor.update({ img: imagePath });
+            await actor.update({ img: `${imagePath}?cb=${Date.now()}` });
             actor.sheet.render(true);
 
             ui.notifications.info("Portrait updated.");
