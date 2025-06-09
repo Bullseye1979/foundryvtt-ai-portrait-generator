@@ -1,6 +1,4 @@
 console.log("[AI Portrait Generator] Script loaded");
-
-// SETTINGS
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
     name: "OpenAI API Key",
@@ -76,7 +74,6 @@ async function generatePortrait(actor) {
   const level = clsItem?.system?.levels ?? 1;
   const bio = system.details?.biography?.value?.replace(/<[^>]*>?/gm, "") || "";
   const equipment = items.filter(i => ["weapon", "equipment", "armor"].includes(i.type)).map(i => i.name).slice(0, 5).join(", ") || "no visible equipment";
-
   const baseDescription = `Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
@@ -86,8 +83,6 @@ Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Equipment: ${equipment}
 Description: ${bio || "No additional description."}`;
-
-  // GPT AUFRUF
   ui.notifications.info("Contacting GPT to optimize portrait description...");
   let optimizedPrompt = baseDescription;
 
@@ -105,7 +100,7 @@ Description: ${bio || "No additional description."}`;
           { role: "user", content: baseDescription }
         ],
         temperature: 0.7,
-        max_tokens: 250
+        max_tokens: 500
       })
     });
 
@@ -115,8 +110,6 @@ Description: ${bio || "No additional description."}`;
     console.error("GPT Error:", err);
     ui.notifications.warn("GPT optimization failed, using raw description.");
   }
-
-  // BEARBEITUNGSDIALOG
   new Dialog({
     title: "Edit AI Prompt",
     content: `
@@ -131,11 +124,6 @@ Description: ${bio || "No additional description."}`;
         label: "Generate",
         callback: async (html) => {
           let prompt = html.find("#prompt-text").val()?.trim();
-          if (prompt.length > 1000) {
-            prompt = prompt.slice(0, 1000);
-            ui.notifications.warn("Prompt too long; truncated.");
-          }
-
           ui.notifications.info("Generating image from DALL·E...");
 
           try {
@@ -159,13 +147,10 @@ Description: ${bio || "No additional description."}`;
             const safeName = actor.name.replace(/\s/g, "_");
             const filename = `portrait-${safeName}-${timestamp}.webp`;
             const file = new File([blob], filename, { type: blob.type });
-
-
             const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
             const imagePath = upload.path;
             await actor.update({ img: imagePath });
             actor.sheet.render(true);
-
             ui.notifications.info("Portrait updated.");
           } catch (err) {
             console.error("DALL·E error:", err);
@@ -179,7 +164,6 @@ Description: ${bio || "No additional description."}`;
   }).render(true);
 }
 
-// SERVERSEITIGER PROXY
 Hooks.once("ready", () => {
   if (!game.user.isGM) return;
 
