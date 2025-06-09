@@ -11,12 +11,12 @@ Hooks.once("init", () => {
   });
 
   game.settings.register("ai-portrait-generator", "stylePrompt", {
-    name: "Default Style Prompt",
-    hint: "Enter your preferred visual style for character portraits (e.g. painterly, moody lighting...)",
+    name: "GPT-Style Prompt",
+    hint: "Describe how GPT-3.5 should formulate the portrait description",
     scope: "world",
     config: true,
     type: String,
-    default: "highly detailed, DnD character, cinematic light, colorful, centered face, portrait"
+    default: "Create a vivid, cinematic prompt for a fantasy RPG portrait with clear face view"
   });
 });
 
@@ -35,14 +35,36 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   });
 });
 
+async function getOptimizedPrompt(stylePrompt, characterDesc, apiKey) {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: stylePrompt },
+        { role: "user", content: characterDesc }
+      ],
+      max_tokens: 500
+    })
+  });
+
+  if (!response.ok) throw new Error("GPT-3.5 error: " + response.statusText);
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content ?? characterDesc;
+}
+
 async function generatePortrait(actor) {
   const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
+  const stylePrompt = game.settings.get("ai-portrait-generator", "stylePrompt");
+
   if (!apiKey) {
-    ui.notifications.warn("OpenAI API Key not set in module settings.");
+    ui.notifications.warn("OpenAI API Key not set.");
     return;
   }
-
-  const userStyle = game.settings.get("ai-portrait-generator", "stylePrompt");
 
   const { name, system, items } = actor;
   const clsItem = items.find(i => i.type === "class");
@@ -58,15 +80,9 @@ async function generatePortrait(actor) {
   const weight = system.details?.weight || "";
   const level = clsItem?.system?.levels ?? 1;
   const bio = system.details?.biography?.value?.replace(/<[^>]*>?/gm, "") || "";
+  const equipment = items.filter(i => ["weapon", "equipment", "armor"].includes(i.type)).map(i => i.name).slice(0, 5).join(", ") || "no visible equipment";
 
-  const equipment = items
-    .filter(i => ["weapon", "equipment", "armor"].includes(i.type))
-    .map(i => i.name)
-    .slice(0, 5)
-    .join(", ") || "no visible equipment";
-
-  const basePrompt = `
-Name: ${name}
+  const characterDesc = `Character Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
 Gender: ${gender}
@@ -74,81 +90,58 @@ Age: ${age}, Height: ${height}, Weight: ${weight}
 Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
-Description: ${bio || "No additional description."}
-Style: ${userStyle}`;
+Bio: ${bio || "No additional description."}`;
+
+  let finalPrompt = characterDesc;
+  try {
+    finalPrompt = await getOptimizedPrompt(stylePrompt, characterDesc, apiKey);
+  } catch (e) {
+    console.warn("[AI Portrait Generator] GPT optimization failed:", e);
+  }
 
   new Dialog({
     title: "Edit AI Prompt",
-    content: `
-      <form>
-        <div class="form-group">
-          <label>Edit prompt for GPT-3.5 (will be optimized before DALL·E):</label>
-          <textarea id="prompt-text" rows="12" style="width:100%;">${basePrompt}</textarea>
-        </div>
-      </form>`,
+    content: `<form>
+      <div class="form-group">
+        <label>Edit prompt for AI generation:</label>
+        <textarea id="prompt-text" rows="12" style="width:100%;">${finalPrompt}</textarea>
+      </div>
+    </form>`,
     buttons: {
       generate: {
         label: "Generate",
         callback: async (html) => {
-          const rawPrompt = html.find("#prompt-text").val();
-          ui.notifications.info("Optimizing prompt with GPT-3.5...");
+          const prompt = html.find("#prompt-text").val();
+          ui.notifications.info("Starting AI Portrait generation...");
 
-          // GPT-3.5: Prompt Optimization
-          const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+          const response = await fetch("https://api.openai.com/v1/images/generations", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${apiKey}`
             },
-            body: JSON.stringify({
-              model: "gpt-3.5-turbo",
-              messages: [
-                { role: "system", content: "You are an expert prompt engineer for DALL·E, focused on fantasy character portraits. Make sure the image shows the face fully centered, without cropping. Avoid full-body unless requested." },
-                { role: "user", content: rawPrompt }
-              ],
-              temperature: 0.7
-            })
+            body: JSON.stringify({ prompt, n: 1, size: "1024x1024", response_format: "b64_json" })
           });
 
-          const gptData = await gptResponse.json();
-          const optimizedPrompt = gptData.choices?.[0]?.message?.content?.trim();
-
-          if (!optimizedPrompt) {
-            ui.notifications.error("Failed to get optimized prompt.");
+          if (!response.ok) {
+            ui.notifications.error("Error from OpenAI: " + response.statusText);
             return;
           }
 
-          ui.notifications.info("Generating portrait with DALL·E...");
-
-          // DALL·E: Image Generation
-          const imageResponse = await fetch("https://api.openai.com/v1/images/generations", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-              prompt: optimizedPrompt,
-              n: 1,
-              size: "1024x1024",
-              response_format: "b64_json"
-            })
-          });
-
-          const imageData = await imageResponse.json();
-          const base64 = imageData.data[0].b64_json;
+          const data = await response.json();
+          const base64 = data.data[0].b64_json;
           const binary = atob(base64);
           const array = Uint8Array.from(binary, c => c.charCodeAt(0));
           const filename = `portrait-${actor.id}-${Date.now()}.webp`;
           const file = new File([array], filename, { type: "image/webp" });
 
-          const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
-          const imagePath = upload.path;
+          const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
+          const imagePath = upload.path + `?${Date.now()}`;
 
           await actor.update({ img: imagePath });
           actor.sheet.render(true);
 
-          ui.notifications.info("✅ Portrait updated successfully.");
+          ui.notifications.info("Portrait generation complete.");
         }
       },
       cancel: { label: "Cancel" }
