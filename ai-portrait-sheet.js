@@ -76,9 +76,8 @@ Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head c
           <textarea id="prompt-text" rows="12" style="width:100%;">${defaultPrompt}</textarea>
         </div>
       </form>`,
-    config: {
-    buttons: [
-      { label: "Generate", icon: "fas fa-magic", callback: async (html) =>
+    buttons: {
+      generate: {
         label: "Generate",
         callback: async (html) => {
           const prompt = html.querySelector("#prompt-text").value;
@@ -114,9 +113,64 @@ Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head c
           ui.notifications.info("Portrait generation complete.");
         }
       },
-      { label: "Cancel", icon: "fas fa-times", callback: () => {} }
+      cancel: { label: "Cancel" }
+    },
+    default: "generate"
+  }).render(true);
+}
+
+new foundry.applications.api.DialogV2({
+  title: "Edit AI Prompt",
+  content: `
+    <form>
+      <div class="form-group">
+        <label>Edit prompt for AI generation:</label>
+        <textarea id="prompt-text" rows="12" style="width:100%;">${defaultPrompt}</textarea>
+      </div>
+    </form>`,
+  config: {
+    buttons: [
+      {
+        label: "Generate",
+        icon: "fas fa-magic",
+        callback: async (html) => {
+          const prompt = html.querySelector("#prompt-text").value;
+          ui.notifications.info("Starting AI Portrait generation...");
+
+          const response = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${openaiApiKey}`
+            },
+            body: JSON.stringify({ prompt, n: 1, size: "1024x1024", response_format: "b64_json" })
+          });
+
+          if (!response.ok) {
+            ui.notifications.error("Error from OpenAI: " + response.statusText);
+            return;
+          }
+
+          const data = await response.json();
+          const base64 = data.data[0].b64_json;
+          const binary = atob(base64);
+          const array = Uint8Array.from(binary, c => c.charCodeAt(0));
+          const file = new File([array], `portrait-${actor.name.replace(/\s/g, "_")}.webp`, { type: "image/webp" });
+
+          const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
+          const imagePath = upload.path;
+
+          await actor.update({ img: imagePath });
+          actor.sheet.render(true);
+          ui.notifications.info("Portrait generation complete.");
+        }
+      },
+      {
+        label: "Cancel",
+        icon: "fas fa-times",
+        callback: () => {}
+      }
     ],
     defaultButton: 0
   }
-  }).render(true);
-}
+}).render(true);
