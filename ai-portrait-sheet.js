@@ -16,7 +16,8 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   console.log("[AI Portrait] Hook triggered:", app.constructor.name);
 
   // Nur auf DnD5e Charakter-Sheets reagieren
-  if (!app.actor || app.actor.type !== "character") return;
+  const expected = CONFIG.Actor.sheetClasses.character["dnd5e.ActorSheet5eCharacter"]?.cls;
+  if (!expected || !(app instanceof expected)) return;
 
   const actor = app.document;
   if (!actor || actor.type !== "character") return;
@@ -24,6 +25,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   controls.push({
     name: "ai-portrait",
     icon: "fas fa-magic",
+    title: "Generate AI Portrait",
     title: "Generate AI Portrait",
     button: true,
     visible: actor.testUserPermission(game.user, "OWNER"),
@@ -102,10 +104,14 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
           const data = await response.json();
           const imageUrl = data.data[0]?.url;
           const filename = `portrait-${actor.name.replace(/\s/g, "_")}.webp`;
-          const blob = await (await fetch(imageUrl)).blob();
-          const file = new File([blob], filename, { type: "image/webp" });
-          const upload = await FilePicker.upload("data", "user/portraits", file, {}, { notify: true });
-          const imagePath = upload.path;
+          const imagePath = await ImageHelper.downloadImage(imageUrl, {
+            type: "image/webp",
+            name: filename,
+            upload: {
+              target: "user/portraits",
+              notify: true
+            }
+          });
           await actor.update({ img: imagePath });
           ui.notifications.info(`Updated portrait for ${actor.name}.`);
         }
