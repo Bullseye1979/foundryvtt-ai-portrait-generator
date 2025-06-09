@@ -107,7 +107,7 @@ Description: ${bio || "No additional description."}`;
           { role: "user", content: baseDescription }
         ],
         temperature: 0.7,
-        max_tokens: 350
+        max_tokens: 250
       })
     });
 
