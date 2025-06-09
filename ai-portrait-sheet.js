@@ -20,7 +20,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
     name: "ai-portrait",
     icon: "fas fa-magic",
     title: "Generate AI Portrait",
-    text: "🪄 Generate AI Portrait",
+    text: "Generate AI Portrait",
     button: true,
     visible: actor.testUserPermission(game.user, "OWNER"),
     onClick: () => generatePortrait(actor)
@@ -82,11 +82,7 @@ Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic po
         callback: async (html) => {
           const prompt = html.find("#prompt-text")[0].value;
 
-          let counter = 0;
-          const intervalId = setInterval(() => {
-            counter++;
-            ui.notifications.info("Generating AI Portrait… (" + counter + "s)", { permanent: true });
-          }, 1000);
+          ui.notifications.info("Starting AI Portrait generation...");
 
           const response = await fetch("https://api.openai.com/v1/images/generations", {
             method: "POST",
@@ -98,7 +94,6 @@ Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic po
           });
 
           if (!response.ok) {
-            clearInterval(intervalId);
             ui.notifications.error("Error from OpenAI: " + response.statusText);
             return;
           }
@@ -108,11 +103,11 @@ Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic po
           const binary = atob(base64);
           const array = Uint8Array.from(binary, c => c.charCodeAt(0));
           const file = new File([array], `portrait-${actor.name.replace(/\s/g, "_")}.webp`, { type: "image/webp" });
-          const upload = await FilePicker.upload("data", "user/portraits", file, {}, { notify: true });
+
+          const upload = await FilePicker.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
           const imagePath = upload.path;
           await actor.update({ img: imagePath });
 
-          clearInterval(intervalId);
           ui.notifications.info("Portrait generation complete.");
         }
       },
