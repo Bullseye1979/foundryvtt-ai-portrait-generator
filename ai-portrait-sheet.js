@@ -16,7 +16,7 @@ Hooks.on("renderActorSheet", (app, html) => {
   const actor = app.actor;
   if (!actor || actor.type !== "character") return;
 
-  const titleBar = html.find(".app-header .window-title");
+  const titleBar = html.find(".window-title, .app .window-header, .window-header .window-title");
   if (!titleBar.length) return;
 
   if (titleBar.find(".ai-portrait-icon").length) return;
