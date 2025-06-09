@@ -51,7 +51,6 @@ async function generatePortrait(actor) {
   const alignment = system.details?.alignment ?? "Neutral";
   const gender = system.details?.gender ?? "Unknown";
   const age = system.details?.age ?? "Unknown";
-  const level = clsItem?.system?.levels ?? 1;
   const faith = system.details?.faith ?? "";
   const kin = system.details?.kin ?? "";
   const traits = system.details?.trait ?? "";
@@ -160,9 +159,13 @@ Description should reflect these traits faithfully. Do not alter factual attribu
             const upd = await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
             const imagePath = upd.path;
 
-            await actor.update({ img: `${imagePath}?cb=${Date.now()}` });
+            await actor.update({
+              img: `${imagePath}?cb=${Date.now()}`,
+              "prototypeToken.texture.src": `${imagePath}?cb=${Date.now()}`
+            });
+
             actor.sheet.render(true);
-            ui.notifications.info("Portrait updated.");
+            ui.notifications.info("Portrait and Token image updated.");
           } catch (e) {
             console.error("Image generation failed:", e);
             ui.notifications.error("Portrait generation failed.");
