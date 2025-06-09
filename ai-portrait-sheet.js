@@ -14,23 +14,24 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
-});
 
-Hooks.on("renderActorDirectory", (app, html) => {
-  const footer = html.find(".directory-footer");
-  if (!footer.length) return;
+  setTimeout(() => {
+    const footer = document.querySelector(".directory-footer");
+    if (!footer) {
+      console.warn("[AI Portrait Generator] .directory-footer not found");
+      return;
+    }
 
-  // Verhindere doppelte Buttons
-  if (footer.find("button.ai-portrait-button").length) return;
+    if (footer.querySelector(".ai-portrait-button")) return;
 
-  const btn = $(
-    `<button type="button" class="ai-portrait-button">
-       <i class="fas fa-magic"></i> AI Portrait
-     </button>`
-  );
-  btn.on("click", () => showActorSelectionDialog());
-  footer.append(btn);
-  console.log("[AI Portrait Generator] Button added in Actor Directory");
+    const btn = document.createElement("button");
+    btn.innerHTML = '<i class="fas fa-magic"></i> AI Portrait';
+    btn.classList.add("ai-portrait-button");
+    btn.addEventListener("click", () => showActorSelectionDialog());
+    footer.appendChild(btn);
+
+    console.log("[AI Portrait Generator] Button added (via fallback)");
+  }, 1000);
 });
 
 async function showActorSelectionDialog() {
@@ -139,7 +140,7 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
           }
           const data = await response.json();
           const imageUrl = data.data[0]?.url;
-          const filename = `portrait-${actor.name.replace(/\\s/g, "_")}.webp`;
+          const filename = `portrait-${actor.name.replace(/\s/g, "_")}.webp`;
           const blob = await (await fetch(imageUrl)).blob();
           const file = new File([blob], filename, { type: "image/webp" });
           const upload = await FilePicker.upload("data", "user/portraits", file, {}, { notify: true });
