@@ -1,3 +1,4 @@
+
 console.log("[AI Portrait Generator] Script loaded.");
 
 Hooks.once("init", () => {
@@ -13,21 +14,21 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
+});
 
-  const actorDir = ui.actors;
-  if (!actorDir) return;
+Hooks.on("renderActorDirectory", (app, html) => {
+  const footer = html.find(".directory-footer");
+  if (!footer.length) return;
 
-  const button = document.createElement("button");
-  button.innerHTML = '<i class="fas fa-magic"></i> AI Portrait';
-  button.classList.add("ai-portrait-button");
-  button.addEventListener("click", showActorSelectionDialog);
+  if (footer.find(".ai-portrait-button").length) return;
 
-  Hooks.on("renderActorDirectory", (app, html) => {
-    const footer = html.find(".directory-footer");
-    if (!footer.find(".ai-portrait-button").length) {
-      footer.append(button);
-    }
-  });
+  const button = $(`
+    <button class="ai-portrait-button">
+      <i class="fas fa-magic"></i> AI Portrait
+    </button>
+  `);
+  button.on("click", showActorSelectionDialog);
+  footer.append(button);
 });
 
 async function showActorSelectionDialog() {
@@ -130,20 +131,17 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
             },
             body: JSON.stringify({ prompt, n: 1, size: "512x512" })
           });
-
           if (!response.ok) {
             ui.notifications.error("Error from OpenAI: " + response.statusText);
             return;
           }
-
           const data = await response.json();
           const imageUrl = data.data[0]?.url;
-          const filename = `portrait-${actor.name.replace(/\s/g, "_")}.webp`;
+          const filename = `portrait-${actor.name.replace(/\\s/g, "_")}.webp`;
           const blob = await (await fetch(imageUrl)).blob();
           const file = new File([blob], filename, { type: "image/webp" });
           const upload = await FilePicker.upload("data", "user/portraits", file, {}, { notify: true });
           const imagePath = upload.path;
-
           await actor.update({ img: imagePath });
           ui.notifications.info(`Updated portrait for ${actor.name}.`);
         }
