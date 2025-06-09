@@ -80,7 +80,7 @@ Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head c
       generate: {
         label: "Generate",
         callback: async (html) => {
-          const prompt = html.querySelector("#prompt-text").value;
+          const prompt = html.find("#prompt-text").val()
 
           ui.notifications.info("Starting AI Portrait generation...");
 
