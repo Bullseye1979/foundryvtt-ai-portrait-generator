@@ -25,8 +25,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   controls.push({
     name: "ai-portrait",
     icon: "fas fa-magic",
-    title: "Generate AI Portrait",
-    label: "🪄 AI Portrait"
+    title: "🪄 Generate AI Portrait"
     button: true,
     visible: actor.testUserPermission(game.user, "OWNER"),
     onClick: () => generatePortrait(actor)
