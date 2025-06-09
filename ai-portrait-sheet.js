@@ -10,13 +10,13 @@ Hooks.once("init", () => {
     default: ""
   });
 
-  game.settings.register("ai-portrait-generator", "promptStyle", {
-    name: "Base Style Prompt",
-    hint: "This style prompt will be prepended to each AI request (e.g. 'Fantasy art, cinematic lighting...')",
+  game.settings.register("ai-portrait-generator", "stylePrompt", {
+    name: "Default Style Prompt",
+    hint: "Enter your preferred visual style for character portraits (e.g. painterly, moody lighting...)",
     scope: "world",
     config: true,
     type: String,
-    default: "Fantasy RPG portrait, cinematic lighting, centered face, vibrant colors"
+    default: "highly detailed, DnD character, cinematic light, colorful, centered face, portrait"
   });
 });
 
@@ -36,13 +36,13 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
 });
 
 async function generatePortrait(actor) {
-  const openaiApiKey = game.settings.get("ai-portrait-generator", "apiKey");
-  const promptStyle = game.settings.get("ai-portrait-generator", "promptStyle") || "";
-
-  if (!openaiApiKey) {
+  const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
+  if (!apiKey) {
     ui.notifications.warn("OpenAI API Key not set in module settings.");
     return;
   }
+
+  const userStyle = game.settings.get("ai-portrait-generator", "stylePrompt");
 
   const { name, system, items } = actor;
   const clsItem = items.find(i => i.type === "class");
@@ -65,7 +65,8 @@ async function generatePortrait(actor) {
     .slice(0, 5)
     .join(", ") || "no visible equipment";
 
-  const dynamicPrompt = `Name: ${name}
+  const basePrompt = `
+Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
 Gender: ${gender}
@@ -73,55 +74,81 @@ Age: ${age}, Height: ${height}, Weight: ${weight}
 Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
-Description: ${bio || "No additional description."}`;
-
-  const fullPrompt = `${promptStyle}\n${dynamicPrompt}`;
+Description: ${bio || "No additional description."}
+Style: ${userStyle}`;
 
   new Dialog({
     title: "Edit AI Prompt",
     content: `
       <form>
         <div class="form-group">
-          <label>Edit prompt for AI generation:</label>
-          <textarea id="prompt-text" rows="12" style="width:100%;">${fullPrompt}</textarea>
+          <label>Edit prompt for GPT-3.5 (will be optimized before DALL·E):</label>
+          <textarea id="prompt-text" rows="12" style="width:100%;">${basePrompt}</textarea>
         </div>
       </form>`,
     buttons: {
       generate: {
         label: "Generate",
         callback: async (html) => {
-          const prompt = html.find("#prompt-text").val();
-          ui.notifications.info("Starting AI Portrait generation...");
+          const rawPrompt = html.find("#prompt-text").val();
+          ui.notifications.info("Optimizing prompt with GPT-3.5...");
 
-          const response = await fetch("https://api.openai.com/v1/images/generations", {
+          // GPT-3.5: Prompt Optimization
+          const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${openaiApiKey}`
+              "Authorization": `Bearer ${apiKey}`
             },
-            body: JSON.stringify({ prompt, n: 1, size: "1024x1024", response_format: "b64_json" })
+            body: JSON.stringify({
+              model: "gpt-3.5-turbo",
+              messages: [
+                { role: "system", content: "You are an expert prompt engineer for DALL·E, focused on fantasy character portraits. Make sure the image shows the face fully centered, without cropping. Avoid full-body unless requested." },
+                { role: "user", content: rawPrompt }
+              ],
+              temperature: 0.7
+            })
           });
 
-          if (!response.ok) {
-            ui.notifications.error("Error from OpenAI: " + response.statusText);
+          const gptData = await gptResponse.json();
+          const optimizedPrompt = gptData.choices?.[0]?.message?.content?.trim();
+
+          if (!optimizedPrompt) {
+            ui.notifications.error("Failed to get optimized prompt.");
             return;
           }
 
-          const data = await response.json();
-          const base64 = data.data[0].b64_json;
+          ui.notifications.info("Generating portrait with DALL·E...");
+
+          // DALL·E: Image Generation
+          const imageResponse = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              prompt: optimizedPrompt,
+              n: 1,
+              size: "1024x1024",
+              response_format: "b64_json"
+            })
+          });
+
+          const imageData = await imageResponse.json();
+          const base64 = imageData.data[0].b64_json;
           const binary = atob(base64);
           const array = Uint8Array.from(binary, c => c.charCodeAt(0));
-          const random = Math.floor(Math.random() * 999999);
-          const filename = `portrait-${actor.name.replace(/\s/g, "_")}-${random}.webp`;
+          const filename = `portrait-${actor.id}-${Date.now()}.webp`;
           const file = new File([array], filename, { type: "image/webp" });
 
-          const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
+          const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
           const imagePath = upload.path;
 
           await actor.update({ img: imagePath });
           actor.sheet.render(true);
 
-          ui.notifications.info("Portrait generation complete.");
+          ui.notifications.info("✅ Portrait updated successfully.");
         }
       },
       cancel: { label: "Cancel" }
