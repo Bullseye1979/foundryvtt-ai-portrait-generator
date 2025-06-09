@@ -27,6 +27,54 @@ Hooks.once("init", () => {
   });
 });
 
+Hooks.once("ready", async () => {
+  if (game.user.isGM) {
+    game.socket.on("module.ai-portrait-generator", async ({ actorId, prompt }) => {
+      const actor = game.actors.get(actorId);
+      const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
+
+      if (!actor || !apiKey) return;
+
+      const fetch = require("node-fetch");
+      const fs = require("fs");
+      const path = require("path");
+
+      const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          prompt,
+          model: "dall-e-3",
+          n: 1,
+          size: "1024x1024",
+          response_format: "url"
+        })
+      });
+
+      const dalleData = await dalleResponse.json();
+      const imageUrl = dalleData.data?.[0]?.url;
+      if (!imageUrl) return console.warn("No image URL received.");
+
+      const imgRes = await fetch(imageUrl);
+      const buffer = await imgRes.buffer();
+
+      const timestamp = Date.now();
+      const safeName = actor.name.replace(/\s/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+      const fileName = `portrait-${safeName}-${timestamp}.webp`;
+      const outPath = path.join("public", "user", "portraits", fileName);
+
+      fs.writeFileSync(outPath, buffer);
+      const relativePath = `user/portraits/${fileName}`;
+
+      await actor.update({ img: `${relativePath}?cb=${timestamp}` });
+      console.log(`[AI Portrait Generator] Saved portrait for ${actor.name}`);
+    });
+  }
+});
+
 Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   const actor = app.document;
   if (!actor) return;
@@ -114,46 +162,13 @@ Description: ${bio || "No additional description."}`;
       generate: {
         label: "Generate",
         callback: async (html) => {
-          let prompt = html.find("#prompt-text").val()?.trim();
-          if (prompt.length > 1000) prompt = prompt.slice(0, 1000);
-
-          ui.notifications.info("Requesting DALL·E image...");
-
-          try {
-            const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
-              },
-              body: JSON.stringify({ prompt, model: "dall-e-3", n: 1, size: "1024x1024", response_format: "url" })
-            });
-
-            const dalleData = await dalleResponse.json();
-            const imageUrl = dalleData.data?.[0]?.url;
-            if (!imageUrl) throw new Error("No image URL returned.");
-
-            const proxyUrl = `/ai-portrait-proxy?url=${encodeURIComponent(imageUrl)}`;
-            const imgResponse = await fetch(proxyUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
-            if (!imgResponse.ok) throw new Error(`Proxy failed (${imgResponse.status})`);
-
-            const blob = await imgResponse.blob();
-            const timestamp = Date.now();
-            const safeName = actor.name.replace(/\s/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
-            const fileName = `portrait-${safeName}-${timestamp}.webp`;
-            const file = new File([blob], fileName, { type: blob.type });
-
-            const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
-            const imagePath = upload.path;
-
-            await actor.update({ img: `${imagePath}?cb=${timestamp}` });
-            actor.sheet.render(true);
-
-            ui.notifications.info("Portrait updated.");
-          } catch (err) {
-            console.error("DALL·E error:", err);
-            ui.notifications.error("Image generation failed.");
-          }
+          let finalPrompt = html.find("#prompt-text").val()?.trim();
+          if (finalPrompt.length > 1000) finalPrompt = finalPrompt.slice(0, 1000);
+          ui.notifications.info("Generating image...");
+          game.socket.emit("module.ai-portrait-generator", {
+            actorId: actor.id,
+            prompt: finalPrompt
+          });
         }
       },
       cancel: { label: "Cancel" }
@@ -161,45 +176,3 @@ Description: ${bio || "No additional description."}`;
     default: "generate"
   }).render(true);
 }
-
-Hooks.once("ready", () => {
-  if (!game.user.isGM) return;
-
-  const expressApp = globalThis.foundry?.server?.app;
-  if (!expressApp) {
-    console.warn("[AI Portrait Generator] No express app found.");
-    return;
-  }
-
-  expressApp.get("/ai-portrait-proxy", async (req, res) => {
-    const url = req.query.url;
-    if (!url?.startsWith("https://")) return res.status(400).send("Invalid URL.");
-
-    try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0"
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[AI Proxy] Response error:", errorText);
-        return res.status(502).send("Image fetch failed.");
-      }
-
-      const contentType = response.headers.get("content-type") || "image/webp";
-      const buffer = await response.arrayBuffer();
-
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.send(Buffer.from(buffer));
-    } catch (err) {
-      console.error("[AI Proxy] Error fetching image:", err);
-      res.status(500).send("Proxy error.");
-    }
-  });
-
-  console.log("[AI Portrait Generator] Proxy endpoint /ai-portrait-proxy registered.");
-});
-
