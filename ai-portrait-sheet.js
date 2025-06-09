@@ -13,7 +13,7 @@ Hooks.once("init", () => {
     hint: "System prompt for GPT – defines how to enhance the character.",
     scope: "world", config: true, type: String, multiline: true,
     default: `You are enhancing a prompt for DALL·E to generate a portrait of a D&D character.
-Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, or equipment.
+Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, equipment, eye color, hair, skin tone, height, or weight.
 You may add atmosphere, lighting, pose, art style – but not change or invent anything about the character.`
   });
 
@@ -57,6 +57,12 @@ async function generatePortrait(actor) {
     .filter(i => ["weapon", "equipment", "armor"].includes(i.type))
     .map(i => i.name).slice(0, 5).join(", ") || "No visible equipment";
 
+  const eyes = system.details?.eyes ?? "unknown";
+  const hair = system.details?.hair ?? "unknown";
+  const skin = system.details?.skin ?? "unknown";
+  const height = system.details?.height ?? "unknown";
+  const weight = system.details?.weight ?? "unknown";
+
   const basePrompt = `Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
@@ -66,6 +72,12 @@ Level: ${level}
 Alignment: ${alignment}
 Background: ${background}
 Equipment: ${equipment}
+Appearance:
+- Eye Color: ${eyes}
+- Hair: ${hair}
+- Skin: ${skin}
+- Height: ${height}
+- Weight: ${weight}
 Description: ${bio || "No additional description."}`;
 
   ui.notifications.info("Contacting GPT...");
