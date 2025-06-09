@@ -20,15 +20,17 @@ Hooks.on("renderActorDirectory", (app, html) => {
   const footer = html.find(".directory-footer");
   if (!footer.length) return;
 
-  if (footer.find(".ai-portrait-button").length) return;
+  // Verhindere doppelte Buttons
+  if (footer.find("button.ai-portrait-button").length) return;
 
-  const button = $(`
-    <button class="ai-portrait-button">
-      <i class="fas fa-magic"></i> AI Portrait
-    </button>
-  `);
-  button.on("click", showActorSelectionDialog);
-  footer.append(button);
+  const btn = $(
+    `<button type="button" class="ai-portrait-button">
+       <i class="fas fa-magic"></i> AI Portrait
+     </button>`
+  );
+  btn.on("click", () => showActorSelectionDialog());
+  footer.append(btn);
+  console.log("[AI Portrait Generator] Button added in Actor Directory");
 });
 
 async function showActorSelectionDialog() {
