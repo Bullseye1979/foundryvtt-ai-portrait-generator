@@ -28,8 +28,7 @@ Hooks.once("init", () => {
 - Ensure that each hand only has 5 fingers. Persons only have 2 arms and 2 legs. Avoid deformed faces and bodies.
 - Ensure descriptions are not inappropriate or suggestive in any way.
 - The picture is a portrait. Ensure that the face is always fully visible and centered.
-- Avoid: Full body pictures.
-- No deformed faces`,
+- Avoid: Full body pictures.`,
     multiline: true
   });
 });
@@ -58,7 +57,6 @@ async function generatePortrait(actor) {
     return;
   }
 
-  // Charakterdaten zusammensetzen
   const { name, system, items } = actor;
   const clsItem = items.find(i => i.type === "class");
   const cls = clsItem?.name ?? "adventurer";
@@ -89,7 +87,6 @@ Background: ${background}
 Equipment: ${equipment}
 Description: ${bio || "No additional description."}`;
 
-  // Prompt an GPT senden
   ui.notifications.info("Contacting GPT-3.5 to optimize portrait description...");
   let optimizedPrompt = baseDescription;
 
@@ -107,7 +104,7 @@ Description: ${bio || "No additional description."}`;
           { role: "user", content: baseDescription }
         ],
         temperature: 0.7,
-        max_tokens: 250
+        max_tokens: 500
       })
     });
 
@@ -118,7 +115,6 @@ Description: ${bio || "No additional description."}`;
     ui.notifications.warn("GPT optimization failed, using raw description.");
   }
 
-  // Dialog zur Bearbeitung des finalen Prompts
   new Dialog({
     title: "Edit AI Prompt",
     content: `
@@ -135,27 +131,34 @@ Description: ${bio || "No additional description."}`;
           let prompt = html.find("#prompt-text").val()?.trim();
           if (prompt.length > 1000) {
             prompt = prompt.slice(0, 1000);
-            ui.notifications.warn("Prompt was too long and has been trimmed.");
+            ui.notifications.warn("Prompt too long, truncated to 1000 characters.");
           }
 
-          ui.notifications.info("Generating image from DALL·E...");
+          ui.notifications.info("Generating image from DALL·E 3...");
 
           try {
-            const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
+            const response = await fetch("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${apiKey}`
               },
-              body: JSON.stringify({ prompt, n: 1, size: "1024x1024", response_format: "b64_json" })
+              body: JSON.stringify({
+                model: "dall-e-3",
+                prompt,
+                n: 1,
+                size: "1024x1024",
+                response_format: "url"
+              })
             });
 
-            if (!dalleResponse.ok) throw new Error(await dalleResponse.text());
-            const dalleData = await dalleResponse.json();
-            const base64 = dalleData.data[0].b64_json;
-            const binary = atob(base64);
-            const array = Uint8Array.from(binary, c => c.charCodeAt(0));
-            const file = new File([array], `portrait-${actor.name.replace(/\s/g, "_")}.webp`, { type: "image/webp" });
+            const dalleData = await response.json();
+            const imageUrl = dalleData.data[0].url;
+
+            // Proxy-URL über Foundry-Server
+            const proxyUrl = `/ai-portrait-proxy?url=${encodeURIComponent(imageUrl)}`;
+            const buffer = await fetch(proxyUrl).then(r => r.arrayBuffer());
+            const file = new File([new Uint8Array(buffer)], `portrait-${actor.name.replace(/\s/g, "_")}.webp`, { type: "image/webp" });
 
             const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
             const imagePath = upload.path;
@@ -175,3 +178,26 @@ Description: ${bio || "No additional description."}`;
     default: "generate"
   }).render(true);
 }
+
+// CORS-Proxy registrieren (nur GM)
+Hooks.once("ready", () => {
+  if (!game.user.isGM) return;
+  const expressApp = game.server?.app || globalThis.foundry?.server?.app;
+  if (!expressApp) return;
+
+  expressApp.get("/ai-portrait-proxy", async (req, res) => {
+    const imageUrl = req.query.url;
+    if (!imageUrl?.startsWith("https://")) return res.status(400).send("Invalid URL");
+
+    try {
+      const response = await fetch(imageUrl);
+      const buffer = await response.arrayBuffer();
+      res.setHeader("Content-Type", "image/webp");
+      res.send(Buffer.from(buffer));
+    } catch (err) {
+      res.status(500).send("Image download failed");
+    }
+  });
+
+  console.log("[AI Portrait Generator] Proxy endpoint /ai-portrait-proxy initialized");
+});
