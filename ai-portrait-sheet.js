@@ -26,7 +26,6 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
     name: "ai-portrait",
     icon: "fas fa-magic",
     title: "Generate AI Portrait",
-    title: "Generate AI Portrait",
     button: true,
     visible: actor.testUserPermission(game.user, "OWNER"),
     onClick: () => generatePortrait(actor)
@@ -95,7 +94,7 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
               "Content-Type": "application/json",
               "Authorization": `Bearer ${openaiApiKey}`
             },
-            body: JSON.stringify({ prompt, n: 1, size: "512x512" })
+            body: JSON.stringify({ prompt, n: 1, size: "512x512", response_format: "b64_json" })
           });
           if (!response.ok) {
             ui.notifications.error("Error from OpenAI: " + response.statusText);
@@ -104,14 +103,12 @@ Style: Dungeons and Dragons, fantasy art, full color, portrait, dramatic lightin
           const data = await response.json();
           const imageUrl = data.data[0]?.url;
           const filename = `portrait-${actor.name.replace(/\s/g, "_")}.webp`;
-          const imagePath = await ImageHelper.downloadImage(imageUrl, {
-            type: "image/webp",
-            name: filename,
-            upload: {
-              target: "user/portraits",
-              notify: true
-            }
-          });
+          const base64 = data.data[0].b64_json;
+          const binary = atob(base64);
+          const array = Uint8Array.from(binary, c => c.charCodeAt(0));
+          const file = new File([array], filename, { type: "image/webp" });
+          const upload = await FilePicker.upload("data", "user/portraits", file, {}, { notify: true });
+          const imagePath = upload.path;
           await actor.update({ img: imagePath });
           ui.notifications.info(`Updated portrait for ${actor.name}.`);
         }
