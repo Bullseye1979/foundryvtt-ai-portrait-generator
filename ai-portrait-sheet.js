@@ -16,64 +16,21 @@ Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
 });
 
-Hooks.on("renderActorDirectory", (app, html) => {
-  const headerActions = html.find(".directory-header .header-actions");
-  if (!headerActions.length) {
-    console.warn("[AI Portrait Generator] .header-actions not found");
-    return;
-  }
-
-  if (headerActions.find(".ai-portrait-header-button").length) return;
-
-  const button = $(`
-    <a class="ai-portrait-header-button" title="Generate AI Portrait">
-      <i class="fas fa-magic"></i>
-    </a>
-  `);
-
-  button.on("click", showActorSelectionDialog);
-  headerActions.append(button);
-
-  console.log("[AI Portrait Generator] Button inserted in header-actions");
-});
-
-async function showActorSelectionDialog() {
-  const actors = game.actors.filter(actor =>
-    actor.type === "character" &&
-    actor.testUserPermission(game.user, "OWNER")
-  );
-
-  if (!actors.length) {
-    ui.notifications.warn("You don't own any characters.");
-    return;
-  }
-
-  const options = actors.map(actor => `<option value="${actor.id}">${actor.name}</option>`).join("");
-  const content = `
-    <form>
-      <div class="form-group">
-        <label>Select character:</label>
-        <select id="actor-select">${options}</select>
-      </div>
-    </form>`;
-
-  new Dialog({
-    title: "Select Character for AI Portrait",
-    content,
-    buttons: {
-      generate: {
-        label: "Edit Prompt",
-        callback: async (html) => {
-          const actorId = html.find("#actor-select")[0].value;
-          const actor = game.actors.get(actorId);
-          generatePortrait(actor);
-        }
-      },
-      cancel: { label: "Cancel" }
+Hooks.on("getActorDirectoryEntryContext", (html, options) => {
+  options.push({
+    name: "Generate AI Portrait",
+    icon: '<i class="fas fa-magic"></i>',
+    condition: li => {
+      const actor = game.actors.get(li.data("documentId"));
+      return actor?.type === "character" && actor.testUserPermission(game.user, "OWNER");
     },
-    default: "generate"
-  }).render(true);
-}
+    callback: li => {
+      const actor = game.actors.get(li.data("documentId"));
+      generatePortrait(actor);
+    }
+  });
+  console.log("[AI Portrait Generator] Context menu entry added.");
+});
 
 async function generatePortrait(actor) {
   const openaiApiKey = game.settings.get("ai-portrait-generator", "apiKey");
