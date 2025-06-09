@@ -25,11 +25,11 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   controls.push({
     name: "ai-portrait",
     icon: "fas fa-magic",
-    title: "🪄 Generate AI Portrait"
+    title: "🪄 Generate AI Portrait",
     button: true,
-    visible: actor.testUserPermission(game.user, "OWNER"),
+    visible: actor && actor.testUserPermission(game.user, "OWNER"),
     onClick: () => generatePortrait(actor)
-  });
+});
 
   console.log("[AI Portrait] Header button added to character sheet");
 });
