@@ -122,7 +122,15 @@ Description: ${bio || "No additional description."}`;
           const finalPrompt = html.find("#prompt-text").val()?.trim();
           if (!finalPrompt) return ui.notifications.warn("Prompt is empty.");
           ui.notifications.info("Generating image...");
-          await window.aiPortraitSocket.executeAsGM("ai-portrait-generator", "generatePortraitImage", actor.id, finalPrompt);
+          const socketlibApi = game.modules.get("socketlib")?.api;
+          if (!socketlibApi) {
+            ui.notifications.error("Socketlib API nicht verfügbar.");
+            console.error("Socketlib API fehlt.");
+            return;
+          }
+
+await socketlibApi.executeAsGM("ai-portrait-generator", "generatePortraitImage", actor.id, finalPrompt);
+;
         }
       },
       cancel: { label: "Cancel" }
