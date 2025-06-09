@@ -1,4 +1,5 @@
 console.log("[AI Portrait Generator] Script loaded");
+
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
     name: "OpenAI API Key",
@@ -13,27 +14,19 @@ Hooks.once("init", () => {
 
   game.settings.register("ai-portrait-generator", "gptPrompt", {
     name: "GPT Prompt Template",
-    hint: "This instruction is sent to GPT to enhance the character description before sending it to DALL·E.",
+    hint: "Instruction sent to GPT to enhance the character description for DALL·E.",
     scope: "world",
     config: true,
     type: String,
     default: `Enhance the following image description for DALL·E by making it more detailed, atmospheric, and creative without changing its original style.
 - Use creative dynamic angles, lighting effects, and filters when appropriate.
 - Incorporate creative symbolism when relevant.
-- Give faces character and avoid generic or doll-like appearances.
-- Use vibrant colors, when appropriate.
-- Prefer digital art style.
-- Prefer dynamic action-packed scenes, when appropriate.
-- Ensure that each hand only has 5 fingers. Persons only have 2 arms and 2 legs. Avoid deformed faces and bodies.
-- Ensure descriptions are not inappropriate or suggestive in any way.
-- The picture is a portrait. Ensure that the face is always fully visible and centered.
-- Avoid: Full body pictures.
-- No deformed faces.`,
+- Ensure the portrait shows a centered face.
+- No deformed bodies. No full-body shots.`,
     multiline: true
   });
 });
 
-// BUTTON EINBAUEN
 Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   const actor = app.document;
   if (!actor) return;
@@ -49,15 +42,11 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   });
 });
 
-// PORTRAIT GENERIEREN
 async function generatePortrait(actor) {
   const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
   const gptPrompt = game.settings.get("ai-portrait-generator", "gptPrompt");
 
-  if (!apiKey) {
-    ui.notifications.warn("OpenAI API Key not set.");
-    return;
-  }
+  if (!apiKey) return ui.notifications.warn("OpenAI API Key not set.");
 
   const { name, system, items } = actor;
   const clsItem = items.find(i => i.type === "class");
@@ -74,6 +63,7 @@ async function generatePortrait(actor) {
   const level = clsItem?.system?.levels ?? 1;
   const bio = system.details?.biography?.value?.replace(/<[^>]*>?/gm, "") || "";
   const equipment = items.filter(i => ["weapon", "equipment", "armor"].includes(i.type)).map(i => i.name).slice(0, 5).join(", ") || "no visible equipment";
+
   const baseDescription = `Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
@@ -83,7 +73,8 @@ Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Equipment: ${equipment}
 Description: ${bio || "No additional description."}`;
-  ui.notifications.info("Contacting GPT to optimize portrait description...");
+
+  ui.notifications.info("Contacting GPT to optimize prompt...");
   let optimizedPrompt = baseDescription;
 
   try {
@@ -100,31 +91,33 @@ Description: ${bio || "No additional description."}`;
           { role: "user", content: baseDescription }
         ],
         temperature: 0.7,
-        max_tokens: 500
+        max_tokens: 250
       })
     });
 
     const gptData = await gptResponse.json();
     optimizedPrompt = gptData.choices?.[0]?.message?.content || baseDescription;
   } catch (err) {
-    console.error("GPT Error:", err);
-    ui.notifications.warn("GPT optimization failed, using raw description.");
+    console.error("GPT error:", err);
+    ui.notifications.warn("Using raw prompt.");
   }
+
   new Dialog({
     title: "Edit AI Prompt",
-    content: `
-      <form>
-        <div class="form-group">
-          <label>Edit prompt for AI generation:</label>
-          <textarea id="prompt-text" rows="12" style="width:100%;">${optimizedPrompt}</textarea>
-        </div>
-      </form>`,
+    content: `<form>
+      <div class="form-group">
+        <label>Prompt:</label>
+        <textarea id="prompt-text" rows="10" style="width:100%;">${optimizedPrompt}</textarea>
+      </div>
+    </form>`,
     buttons: {
       generate: {
         label: "Generate",
         callback: async (html) => {
           let prompt = html.find("#prompt-text").val()?.trim();
-          ui.notifications.info("Generating image from DALL·E...");
+          if (prompt.length > 1000) prompt = prompt.slice(0, 1000);
+
+          ui.notifications.info("Requesting DALL·E image...");
 
           try {
             const dalleResponse = await fetch("https://api.openai.com/v1/images/generations", {
@@ -138,19 +131,24 @@ Description: ${bio || "No additional description."}`;
 
             const dalleData = await dalleResponse.json();
             const imageUrl = dalleData.data?.[0]?.url;
-            if (!imageUrl) throw new Error("No image returned.");
+            if (!imageUrl) throw new Error("No image URL returned.");
 
             const proxyUrl = `/ai-portrait-proxy?url=${encodeURIComponent(imageUrl)}`;
-            const imgResponse = await fetch(proxyUrl);
+            const imgResponse = await fetch(proxyUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+            if (!imgResponse.ok) throw new Error(`Proxy failed (${imgResponse.status})`);
+
             const blob = await imgResponse.blob();
             const timestamp = Date.now();
-            const safeName = actor.name.replace(/\s/g, "_");
-            const filename = `portrait-${safeName}-${timestamp}.webp`;
-            const file = new File([blob], filename, { type: blob.type });
+            const safeName = actor.name.replace(/\s/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+            const fileName = `portrait-${safeName}-${timestamp}.webp`;
+            const file = new File([blob], fileName, { type: blob.type });
+
             const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: false });
             const imagePath = upload.path;
-            await actor.update({ img: imagePath });
+
+            await actor.update({ img: `${imagePath}?cb=${timestamp}` });
             actor.sheet.render(true);
+
             ui.notifications.info("Portrait updated.");
           } catch (err) {
             console.error("DALL·E error:", err);
@@ -169,17 +167,26 @@ Hooks.once("ready", () => {
 
   const expressApp = globalThis.foundry?.server?.app;
   if (!expressApp) {
-    console.warn("[AI Portrait Generator] Express app not found.");
+    console.warn("[AI Portrait Generator] No express app found.");
     return;
   }
 
   expressApp.get("/ai-portrait-proxy", async (req, res) => {
     const url = req.query.url;
-    if (!url?.startsWith("https://")) return res.status(400).send("Invalid or missing 'url'.");
+    if (!url?.startsWith("https://")) return res.status(400).send("Invalid URL.");
 
     try {
-      const response = await fetch(url);
-      if (!response.ok) return res.status(502).send("Image fetch failed: " + response.statusText);
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0"
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[AI Proxy] Response error:", errorText);
+        return res.status(502).send("Image fetch failed.");
+      }
 
       const contentType = response.headers.get("content-type") || "image/webp";
       const buffer = await response.arrayBuffer();
@@ -188,10 +195,11 @@ Hooks.once("ready", () => {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.send(Buffer.from(buffer));
     } catch (err) {
-      console.error("[AI Portrait Generator] Proxy error:", err);
-      res.status(500).send("Proxy request failed.");
+      console.error("[AI Proxy] Error fetching image:", err);
+      res.status(500).send("Proxy error.");
     }
   });
 
-  console.log("[AI Portrait Generator] Proxy route '/ai-portrait-proxy' registered.");
+  console.log("[AI Portrait Generator] Proxy endpoint /ai-portrait-proxy registered.");
 });
+
