@@ -67,7 +67,7 @@ Visible Equipment: ${equipment}
 Description: ${bio || "No additional description."}
 Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head cropping, atmospheric lighting.`;
 
-  new foundry.applications.api.ApplicationV2.dialogs.Dialog({
+  new foundry.applications.api.Dialog({
     title: "Edit AI Prompt",
     content: `
       <form>
