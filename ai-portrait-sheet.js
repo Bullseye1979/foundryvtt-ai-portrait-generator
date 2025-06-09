@@ -14,24 +14,27 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   console.log("[AI Portrait Generator] Ready hook executed.");
+});
 
-  setTimeout(() => {
-    const footer = document.querySelector(".directory-footer");
-    if (!footer) {
-      console.warn("[AI Portrait Generator] .directory-footer not found");
-      return;
-    }
+Hooks.on("renderActorDirectory", (app, html) => {
+  const headerActions = html.find(".directory-header .header-actions");
+  if (!headerActions.length) {
+    console.warn("[AI Portrait Generator] .header-actions not found");
+    return;
+  }
 
-    if (footer.querySelector(".ai-portrait-button")) return;
+  if (headerActions.find(".ai-portrait-header-button").length) return;
 
-    const btn = document.createElement("button");
-    btn.innerHTML = '<i class="fas fa-magic"></i> AI Portrait';
-    btn.classList.add("ai-portrait-button");
-    btn.addEventListener("click", () => showActorSelectionDialog());
-    footer.appendChild(btn);
+  const button = $(`
+    <a class="ai-portrait-header-button" title="Generate AI Portrait">
+      <i class="fas fa-magic"></i>
+    </a>
+  `);
 
-    console.log("[AI Portrait Generator] Button added (via fallback)");
-  }, 1000);
+  button.on("click", showActorSelectionDialog);
+  headerActions.append(button);
+
+  console.log("[AI Portrait Generator] Button inserted in header-actions");
 });
 
 async function showActorSelectionDialog() {
