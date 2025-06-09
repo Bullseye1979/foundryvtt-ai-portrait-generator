@@ -1,6 +1,10 @@
 
 console.log("[AI Portrait Generator] Script started");
 
+Hooks.on("getHeaderControlsApplicationV2", (...args) => {
+  console.log("[DEBUG] getHeaderControlsApplicationV2 called", args[0].constructor.appId);
+});
+
 Hooks.once("init", () => {
   game.settings.register("ai-portrait-generator", "apiKey", {
     name: "OpenAI API Key",
