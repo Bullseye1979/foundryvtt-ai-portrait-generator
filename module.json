@@ -14,10 +14,13 @@
   "manifest": "https://raw.githubusercontent.com/Bullseye1979/foundryvtt-ai-portrait-generator/main/module.json",
   "download": "https://github.com/Bullseye1979/foundryvtt-ai-portrait-generator/archive/refs/heads/main.zip",
   "socket": true,
-  "dependencies": [
-    {
-      "name": "socketlib",
-      "type": "module"
-    }
-  ]
+  "relationships": {
+    "requires": [
+      {
+        "id": "socketlib",
+        "type": "module",
+        "manifest": "https://github.com/fantasycalendar/foundryvtt-socketlib/releases/latest/download/module.json"
+      }
+    ]
+  }
 }
