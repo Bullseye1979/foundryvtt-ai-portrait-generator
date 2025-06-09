@@ -19,7 +19,6 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   controls.push({
     name: "ai-portrait",
     icon: "fas fa-magic",
-    title: "Generate AI Portrait",
     label: "🪄 Generate AI Portrait",
     title: "Generate AI Portrait",
     button: true,
@@ -56,7 +55,7 @@ async function generatePortrait(actor) {
     .slice(0, 5)
     .join(", ") || "no visible equipment";
 
-  const defaultPrompt = `Highly detailed digital portrait of a fantasy RPG character.
+  const defaultPrompt = `Dynamic, vibrant digital portrait of a fantasy RPG character in full view.
 Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
@@ -66,9 +65,9 @@ Level: ${level}, Alignment: ${alignment}
 Background: ${background}
 Visible Equipment: ${equipment}
 Description: ${bio || "No additional description."}
-Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic portrait. No face cropping.`;
+Style: cinematic, full body or bust, centered, colorful, dynamic pose, no head cropping, atmospheric lighting.`;
 
-  new Dialog({
+  new foundry.applications.api.ApplicationV2.dialogs.Dialog({
     title: "Edit AI Prompt",
     content: `
       <form>
@@ -81,7 +80,7 @@ Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic po
       generate: {
         label: "Generate",
         callback: async (html) => {
-          const prompt = html.find("#prompt-text")[0].value;
+          const prompt = html.querySelector("#prompt-text").value;
 
           ui.notifications.info("Starting AI Portrait generation...");
 
@@ -91,7 +90,7 @@ Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic po
               "Content-Type": "application/json",
               "Authorization": `Bearer ${openaiApiKey}`
             },
-            body: JSON.stringify({ prompt, n: 1, size: "512x512", response_format: "b64_json" })
+            body: JSON.stringify({ prompt, n: 1, size: "1024x1024", response_format: "b64_json" })
           });
 
           if (!response.ok) {
@@ -107,7 +106,9 @@ Style: vibrant colors, dynamic camera angles, atmospheric lighting, cinematic po
 
           const upload = await foundry.applications.apps.FilePicker.implementation.upload("data", "user/portraits", file, { overwrite: true }, { notify: true });
           const imagePath = upload.path;
+
           await actor.update({ img: imagePath });
+          actor.sheet.render(true);  // Erneut öffnen und anzeigen
 
           ui.notifications.info("Portrait generation complete.");
         }
