@@ -7,12 +7,16 @@ Hooks.once("init", () => {
     scope: "world", config: true, type: String,
     default: "", restricted: true
   });
+
   game.settings.register("ai-portrait-generator", "gptPrompt", {
     name: "GPT Prompt Template",
-    hint: "Enhance the description – portrait-oriented.",
+    hint: "System prompt for GPT – defines how to enhance the character.",
     scope: "world", config: true, type: String, multiline: true,
-    default: `Enhance the following image description for DALL·E by making it more detailed, creative, and portrait-oriented.`
+    default: `You are enhancing a prompt for DALL·E to generate a portrait of a D&D character.
+Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, or equipment.
+You may add atmosphere, lighting, pose, art style – but not change or invent anything about the character.`
   });
+
   game.settings.register("ai-portrait-generator", "proxyUrl", {
     name: "Proxy Base URL",
     hint: "Full URL of your CORS proxy endpoint (no ?args).",
@@ -39,12 +43,34 @@ async function generatePortrait(actor) {
   if (!apiKey) return ui.notifications.warn("Please set the OpenAI API key.");
 
   const { name, system, items } = actor;
-  // … [Actor metadata logic stays the same] …
+  const clsItem = items.find(i => i.type === "class");
+  const cls = clsItem?.name ?? "Adventurer";
+  const subclass = clsItem?.system?.subclass ?? "";
+  const race = items.find(i => i.type === "race")?.name ?? "Humanoid";
+  const background = items.find(i => i.type === "background")?.name ?? "";
+  const alignment = system.details?.alignment ?? "Neutral";
+  const gender = system.details?.gender ?? "Unknown";
+  const age = system.details?.age ?? "Unknown";
+  const level = clsItem?.system?.levels ?? 1;
+  const bio = system.details?.biography?.value?.replace(/<[^>]*>?/gm, "") ?? "";
+  const equipment = items
+    .filter(i => ["weapon", "equipment", "armor"].includes(i.type))
+    .map(i => i.name).slice(0, 5).join(", ") || "No visible equipment";
 
-  const basePrompt = `Name: ${name}\n…`;
+  const basePrompt = `Name: ${name}
+Class: ${cls}${subclass ? ` (${subclass})` : ""}
+Race: ${race}
+Gender: ${gender}
+Age: ${age}
+Level: ${level}
+Alignment: ${alignment}
+Background: ${background}
+Equipment: ${equipment}
+Description: ${bio || "No additional description."}`;
 
   ui.notifications.info("Contacting GPT...");
-  let optimized;
+
+  let optimized = basePrompt;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: {
@@ -53,7 +79,10 @@ async function generatePortrait(actor) {
       },
       body: JSON.stringify({
         model: "gpt-3.5-turbo",
-        messages: [{ role: "system", content: gptPrompt }, { role: "user", content: basePrompt }],
+        messages: [
+          { role: "system", content: gptPrompt },
+          { role: "user", content: basePrompt }
+        ],
         temperature: 0.7, max_tokens: 300
       })
     });
@@ -62,7 +91,6 @@ async function generatePortrait(actor) {
   } catch (e) {
     console.error("GPT error:", e);
     ui.notifications.warn("GPT failed – using raw prompt.");
-    optimized = basePrompt;
   }
 
   new Dialog({
@@ -74,7 +102,8 @@ async function generatePortrait(actor) {
         callback: async html => {
           const prompt = html.find("#prompt-text").val()?.trim();
           if (!prompt) return;
-          ui.notifications.info("Requesting image…");
+
+          ui.notifications.info("Requesting image from DALL·E...");
 
           try {
             const dalle = await fetch("https://api.openai.com/v1/images/generations", {
@@ -91,15 +120,16 @@ async function generatePortrait(actor) {
             const imageUrl = dd.data?.[0]?.url;
             if (!imageUrl) throw new Error("No image URL.");
 
+            const safeName = actor.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+            const filename = `portrait-${safeName}.webp`;
             const b64 = btoa(imageUrl);
-            if (!proxyBase) throw new Error("No proxy URL configured.");
-            const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(b64)}&name=portrait-${actor.id}.webp`;
+            const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(b64)}&name=${filename}`;
 
             const imgResp = await fetch(proxyUrl);
             if (!imgResp.ok) throw new Error(`Proxy failed: ${imgResp.status}`);
             const blob = await imgResp.blob();
 
-            const file = new File([blob], `portrait-${actor.id}.webp`, { type: blob.type });
+            const file = new File([blob], filename, { type: blob.type });
             const upd = await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
             const imagePath = upd.path;
 
