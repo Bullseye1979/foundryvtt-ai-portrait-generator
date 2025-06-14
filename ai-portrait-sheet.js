@@ -1,46 +1,3 @@
-console.log("[AI Portrait Generator] Loaded");
-
-Hooks.once("init", () => {
-  game.settings.register("ai-portrait-generator", "apiKey", {
-    name: "OpenAI API Key",
-    hint: "API key for GPT and DALL·E.",
-    scope: "world", config: true, type: String,
-    default: "", restricted: true
-  });
-
-  game.settings.register("ai-portrait-generator", "gptPrompt", {
-    name: "GPT Prompt Template (Visual Description)",
-    hint: "System prompt for GPT – generates a visual-only character description.",
-    scope: "world", config: true, type: String, multiline: true,
-    default: `You are writing a visual description of a fantasy character for image generation.
-Focus only on physical appearance, including body type, posture, clothing, colors, facial features, visible traits, and style.
-Ignore all game-specific information such as class, race, alignment, equipment, or background. Do not mention stats or labels.
-Describe the character as if painting them, using rich and consistent visual language.
-Do not include camera angles or background info – this will be added later.
-Your goal is to produce a prompt for an image model that creates an accurate, artistic depiction of the character’s appearance.`
-  });
-
-  game.settings.register("ai-portrait-generator", "proxyUrl", {
-    name: "Proxy Base URL",
-    hint: "Base URL of your CORS proxy endpoint (no ?args).",
-    scope: "world", config: true, type: String,
-    default: "https://corsproxy.ralfreschke.de"
-  });
-});
-
-Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
-  const actor = app.document;
-  if (!actor || !actor.testUserPermission(game.user, "OWNER")) return;
-  controls.push({
-    name: "ai-portrait",
-    icon: "fas fa-magic",
-    label: "Generate AI Portrait",
-    title: "Generate AI Portrait",
-    button: true,
-    onClick: () => generatePortrait(actor)
-  });
-});
-
 async function generatePortrait(actor) {
   const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
   const gptPrompt = game.settings.get("ai-portrait-generator", "gptPrompt");
@@ -99,7 +56,7 @@ Biography: ${bio}`;
 
   ui.notifications.info("Contacting GPT...");
 
-  let visualPrompt = basePrompt;
+  let visualPrompt = "";
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -118,10 +75,12 @@ Biography: ${bio}`;
       })
     });
     const d = await resp.json();
-    visualPrompt = d.choices?.[0]?.message?.content ?? basePrompt;
+    visualPrompt = d.choices?.[0]?.message?.content;
+    if (!visualPrompt) throw new Error("Empty GPT response");
   } catch (e) {
     console.error("GPT error:", e);
-    ui.notifications.warn("GPT failed – using raw prompt.");
+    ui.notifications.warn("GPT failed – showing fallback data.");
+    visualPrompt = `⚠️ GPT failed – using raw character info:\n\n${basePrompt}`;
   }
 
   new Dialog({
@@ -131,12 +90,14 @@ Biography: ${bio}`;
       generate: {
         label: "Generate",
         callback: async html => {
-          const prompt = html.find("#prompt-text").val()?.trim();
-          if (!prompt) return;
+          const userPrompt = html.find("#prompt-text").val()?.trim();
+          if (!userPrompt) return;
 
-          ui.notifications.info("Requesting portrait from DALL·E...");
+          const safeName = actor.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
 
           try {
+            ui.notifications.info("Requesting portrait from DALL·E...");
+
             const dallePortrait = await fetch("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
@@ -144,7 +105,7 @@ Biography: ${bio}`;
                 "Content-Type": "application/json"
               },
               body: JSON.stringify({
-                prompt,
+                prompt: userPrompt,
                 model: "dall-e-3",
                 n: 1,
                 size: "1024x1024",
@@ -154,7 +115,6 @@ Biography: ${bio}`;
             const portraitUrl = (await dallePortrait.json()).data?.[0]?.url;
             if (!portraitUrl) throw new Error("No portrait URL returned.");
 
-            const safeName = actor.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
             const portraitFilename = `portrait-${safeName}.webp`;
             const portraitProxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(portraitUrl))}&name=${portraitFilename}`;
             const portraitBlob = await (await fetch(portraitProxyUrl)).blob();
@@ -164,7 +124,8 @@ Biography: ${bio}`;
 
             ui.notifications.info("Requesting token image from DALL·E...");
 
-            const tokenPrompt = `${prompt}\n\nfull-body view, plain white background, neutral stance`;
+            const tokenPrompt = `${userPrompt}\n\nfull-body view, plain white background, neutral stance`;
+
             const dalleToken = await fetch("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
@@ -195,7 +156,7 @@ Biography: ${bio}`;
             });
 
             actor.sheet.render(true);
-            ui.notifications.info("Portrait and Token updated.");
+            ui.notifications.info("Portrait and Token image updated.");
           } catch (e) {
             console.error("Image generation failed:", e);
             ui.notifications.error("Portrait/Token generation failed.");
