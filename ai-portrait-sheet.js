@@ -10,12 +10,13 @@ Hooks.once("init", () => {
 
   game.settings.register("ai-portrait-generator", "gptPrompt", {
     name: "GPT Prompt Template",
-    hint: "System prompt for GPT – enhances the character for DALL·E generation.",
+    hint: "System prompt for GPT – focuses on physical traits and appearance only.",
     scope: "world", config: true, type: String, multiline: true,
-    default: `You are writing a prompt for DALL·E to generate a fantasy character portrait.
-Focus only on physical, visual, and emotional traits.
-Avoid using game-related terms like class, level, background, alignment, race, or stats.
-Describe the character's mood, appearance, pose, clothing, and surrounding in a realistic, atmospheric way.`
+    default: `You are generating a visual description of a fantasy character based on RPG-like data.
+Focus only on physical appearance, clothing, expression, posture, environment, lighting, and art style.
+Do not include RPG stats, class names, levels, abilities, alignments, or labels like "background" or "personality".
+Do not repeat exact field names or structure – just describe what is visually seen.
+Your goal is a rich visual description for an artist or image model.`
   });
 
   game.settings.register("ai-portrait-generator", "proxyUrl", {
@@ -26,18 +27,17 @@ Describe the character's mood, appearance, pose, clothing, and surrounding in a 
   });
 });
 
-Hooks.on("renderActorSheet", (sheet, html, data) => {
-  const actor = sheet.actor;
+Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
+  const actor = app.document;
   if (!actor || !actor.testUserPermission(game.user, "OWNER")) return;
-  if (html.find(".ai-portrait-button").length) return;
-
-  const button = $(`
-    <a class="ai-portrait-button" style="flex: 0; margin-left: 5px;" title="Generate AI Portrait">
-      <i class="fas fa-magic"></i> AI Portrait
-    </a>
-  `);
-  button.on("click", () => generatePortrait(actor));
-  html.closest('.app').find('.window-title').after(button);
+  controls.push({
+    name: "ai-portrait",
+    icon: "fas fa-magic",
+    label: "Generate AI Portrait",
+    title: "Generate AI Portrait",
+    button: true,
+    onClick: () => generatePortrait(actor)
+  });
 });
 
 async function generatePortrait(actor) {
@@ -47,18 +47,15 @@ async function generatePortrait(actor) {
   if (!apiKey) return ui.notifications.warn("Please set the OpenAI API key.");
 
   const { name, system, items } = actor;
+
   const clsItem = items.find(i => i.type === "class");
   const cls = clsItem?.name ?? "Adventurer";
   const subclass = clsItem?.system?.subclass ?? "";
   const race = items.find(i => i.type === "race")?.name ?? "Humanoid";
   const background = items.find(i => i.type === "background")?.name ?? "";
-  const gender = system.details?.gender ?? "Unknown";
-  const age = system.details?.age ?? "Unknown";
-  const eyes = system.details?.eyes ?? "unknown";
-  const hair = system.details?.hair ?? "unknown";
-  const skin = system.details?.skin ?? "unknown";
-  const height = system.details?.height ?? "unknown";
-  const weight = system.details?.weight ?? "unknown";
+  const alignment = system.details?.alignment ?? "";
+  const gender = system.details?.gender ?? "";
+  const age = system.details?.age ?? "";
   const faith = system.details?.faith ?? "";
   const kin = system.details?.kin ?? "";
   const traits = system.details?.trait ?? "";
@@ -67,9 +64,17 @@ async function generatePortrait(actor) {
   const flaws = system.details?.flaw ?? "";
   const appearance = system.details?.appearance ?? "";
   const bio = system.details?.biography?.value?.replace(/<[^>]*>?/gm, "") ?? "";
-  const equipment = items.filter(i => ["weapon", "equipment", "armor"].includes(i.type)).map(i => i.name).slice(0, 5).join(", ") || "No visible equipment";
+  const eyes = system.details?.eyes ?? "";
+  const hair = system.details?.hair ?? "";
+  const skin = system.details?.skin ?? "";
+  const height = system.details?.height ?? "";
+  const weight = system.details?.weight ?? "";
 
-  const basePrompt = `Name: ${name}
+  const equipment = items
+    .filter(i => ["weapon", "equipment", "armor"].includes(i.type))
+    .map(i => i.name).slice(0, 5).join(", ") || "No visible equipment";
+
+  const rawData = `Name: ${name}
 Class: ${cls}${subclass ? ` (${subclass})` : ""}
 Race: ${race}
 Gender: ${gender}
@@ -81,6 +86,7 @@ Hair: ${hair}
 Skin: ${skin}
 Faith: ${faith}
 Kin: ${kin}
+Alignment: ${alignment}
 Background: ${background}
 Equipment: ${equipment}
 Personality Traits: ${traits}
@@ -92,7 +98,7 @@ Biography: ${bio}`;
 
   ui.notifications.info("Contacting GPT...");
 
-  let visualPrompt = basePrompt;
+  let visualDescription = rawData;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: {
@@ -103,41 +109,42 @@ Biography: ${bio}`;
         model: "gpt-3.5-turbo",
         messages: [
           { role: "system", content: gptPrompt },
-          { role: "user", content: basePrompt }
+          { role: "user", content: rawData }
         ],
         temperature: 0.7, max_tokens: 400
       })
     });
-    const d = await resp.json();
-    visualPrompt = d.choices?.[0]?.message?.content ?? basePrompt;
+    const data = await resp.json();
+    visualDescription = data.choices?.[0]?.message?.content ?? rawData;
   } catch (e) {
-    console.warn("GPT failed:", e);
-    ui.notifications.warn("GPT failed – using fallback prompt.");
+    console.error("GPT error:", e);
+    ui.notifications.warn("GPT failed – using raw data.");
   }
 
   new Dialog({
-    title: "AI Portrait Prompt",
-    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${visualPrompt}</textarea></form>`,
+    title: "AI Portrait Description",
+    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${visualDescription}</textarea></form>`,
     buttons: {
       generate: {
         label: "Generate",
         callback: async html => {
           const prompt = html.find("#prompt-text").val()?.trim();
           if (!prompt) return;
-          ui.notifications.info("Generating portrait image...");
 
-          const safeName = actor.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
-          const portraitFile = await generateImage(apiKey, proxyBase, prompt, "portrait-" + safeName);
-          if (!portraitFile) return;
+          ui.notifications.info("Requesting portrait...");
 
-          ui.notifications.info("Generating token image...");
-          const tokenPrompt = prompt + " Full body, plain white background, standing pose, fantasy art, no background elements.";
-          const tokenFile = await generateImage(apiKey, proxyBase, tokenPrompt, "token-" + safeName);
-          if (!tokenFile) return;
+          const imageUrl = await requestDalleImage(apiKey, prompt, "1024x1024");
+          const portraitPath = await uploadViaProxy(proxyBase, imageUrl, `portrait-${name}.webp`);
+
+          ui.notifications.info("Requesting token...");
+
+          const tokenPrompt = `${prompt} Full-body view, plain white background, neutral or dynamic stance, no background elements.`;
+          const tokenUrl = await requestDalleImage(apiKey, tokenPrompt, "1024x1792");
+          const tokenPath = await uploadViaProxy(proxyBase, tokenUrl, `token-${name}.webp`);
 
           await actor.update({
-            img: `${portraitFile.path}?cb=${Date.now()}`,
-            "prototypeToken.texture.src": `${tokenFile.path}?cb=${Date.now()}`
+            img: `${portraitPath}?cb=${Date.now()}`,
+            "prototypeToken.texture.src": `${tokenPath}?cb=${Date.now()}`
           });
 
           actor.sheet.render(true);
@@ -150,29 +157,28 @@ Biography: ${bio}`;
   }).render(true);
 }
 
-async function generateImage(apiKey, proxyBase, prompt, filename) {
-  try {
-    const dalle = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST", headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        prompt, model: "dall-e-3",
-        n: 1, size: "1024x1024", response_format: "url"
-      })
-    });
-    const data = await dalle.json();
-    const imageUrl = data.data?.[0]?.url;
-    if (!imageUrl) throw new Error("No image URL returned.");
+async function requestDalleImage(apiKey, prompt, size) {
+  const res = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST", headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "dall-e-3",
+      prompt,
+      n: 1,
+      size,
+      response_format: "url"
+    })
+  });
+  const json = await res.json();
+  return json.data?.[0]?.url;
+}
 
-    const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(imageUrl))}&name=${filename}.webp`;
-    const blob = await (await fetch(proxyUrl)).blob();
-    const file = new File([blob], `${filename}.webp`, { type: blob.type });
-    return await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
-  } catch (e) {
-    console.error("Image generation error:", e);
-    ui.notifications.error("Image generation failed.");
-    return null;
-  }
+async function uploadViaProxy(proxyBase, imageUrl, filename) {
+  const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(imageUrl))}&name=${filename}`;
+  const blob = await (await fetch(proxyUrl)).blob();
+  const file = new File([blob], filename, { type: blob.type });
+  const upload = await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
+  return upload.path;
 }
