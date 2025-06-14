@@ -10,12 +10,11 @@ Hooks.once("init", () => {
 
   game.settings.register("ai-portrait-generator", "gptPrompt", {
     name: "GPT Prompt Template",
-    hint: "System prompt for GPT – describes character appearance.",
+    hint: "System prompt for GPT – defines how to enhance the character.",
     scope: "world", config: true, type: String, multiline: true,
-    default: `You are writing a prompt for DALL·E to generate a full-body fantasy character illustration with no background.
-Focus on realistic, visually rich descriptions based solely on the character’s physical appearance, mood, and attire.
-Do not include RPG terms, statistics, class names, or abstract personality traits.
-Ensure that the character’s head and shoulders appear in the upper part of the image.`
+    default: `You are enhancing a prompt for DALL·E to generate a portrait of a D&D character.
+Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, equipment, eye color, hair, skin tone, height, weight, personality traits, ideals, bonds, flaws, faith, kin, appearance, or biography.
+You may add atmosphere, lighting, pose, art style – but not change or invent anything about the character.`
   });
 
   game.settings.register("ai-portrait-generator", "proxyUrl", {
@@ -26,12 +25,15 @@ Ensure that the character’s head and shoulders appear in the upper part of the
   });
 });
 
-Hooks.on("renderActorSheet", (app, html, data) => {
-  const actor = app.actor;
+Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
+  const actor = app.document;
   if (!actor || !actor.testUserPermission(game.user, "OWNER")) return;
-  const btn = $(`<a class="ai-portrait-generator"><i class="fas fa-magic"></i> Generate AI Portrait</a>`);
-  btn.click(() => generatePortrait(actor));
-  html.closest('.app').find('.window-title').after(btn);
+  controls.push({
+    name: "ai-portrait",
+    icon: "fas fa-magic", label: "Generate AI Portrait",
+    title: "Generate AI Portrait", button: true,
+    onClick: () => generatePortrait(actor)
+  });
 });
 
 async function generatePortrait(actor) {
@@ -41,22 +43,60 @@ async function generatePortrait(actor) {
   if (!apiKey) return ui.notifications.warn("Please set the OpenAI API key.");
 
   const { name, system, items } = actor;
+  const clsItem = items.find(i => i.type === "class");
+  const cls = clsItem?.name ?? "Adventurer";
+  const subclass = clsItem?.system?.subclass ?? "";
+  const race = items.find(i => i.type === "race")?.name ?? "Humanoid";
+  const background = items.find(i => i.type === "background")?.name ?? "";
+  const alignment = system.details?.alignment ?? "Neutral";
+  const gender = system.details?.gender ?? "Unknown";
+  const age = system.details?.age ?? "Unknown";
+  const faith = system.details?.faith ?? "";
+  const kin = system.details?.kin ?? "";
+  const traits = system.details?.trait ?? "";
+  const ideals = system.details?.ideal ?? "";
+  const bonds = system.details?.bond ?? "";
+  const flaws = system.details?.flaw ?? "";
+  const appearance = system.details?.appearance ?? "";
+  const bio = system.details?.biography?.value?.replace(/<[^>]*>?/gm, "") ?? "";
+  const eyes = system.details?.eyes ?? "unknown";
+  const hair = system.details?.hair ?? "unknown";
+  const skin = system.details?.skin ?? "unknown";
+  const height = system.details?.height ?? "unknown";
+  const weight = system.details?.weight ?? "unknown";
+
+  const equipment = items
+    .filter(i => ["weapon", "equipment", "armor"].includes(i.type))
+    .map(i => i.name).slice(0, 5).join(", ") || "No visible equipment";
+
   const basePrompt = `Name: ${name}
-Race: ${items.find(i => i.type === "race")?.name ?? "Humanoid"}
-Gender: ${system.details?.gender ?? "Unknown"}
-Age: ${system.details?.age ?? "Unknown"}
-Height: ${system.details?.height ?? "Unknown"}
-Weight: ${system.details?.weight ?? "Unknown"}
-Eye Color: ${system.details?.eyes ?? "Unknown"}
-Hair: ${system.details?.hair ?? "Unknown"}
-Skin: ${system.details?.skin ?? "Unknown"}
-Appearance: ${system.details?.appearance ?? ""}
-Equipment: ${items.filter(i => ["weapon", "equipment", "armor"].includes(i.type)).map(i => i.name).slice(0, 5).join(", ") || "None"}
-Biography: ${(system.details?.biography?.value ?? "").replace(/<[^>]*>?/gm, "")}`;
+Class: ${cls}${subclass ? ` (${subclass})` : ""}
+Race: ${race}
+Gender: ${gender}
+Age: ${age}
+Height: ${height}
+Weight: ${weight}
+Eye Color: ${eyes}
+Hair: ${hair}
+Skin: ${skin}
+Faith: ${faith}
+Kin: ${kin}
+Alignment: ${alignment}
+Background: ${background}
+Equipment: ${equipment}
+
+Personality Traits: ${traits}
+Ideals: ${ideals}
+Bonds: ${bonds}
+Flaws: ${flaws}
+Appearance: ${appearance}
+Biography: ${bio}
+
+Description should reflect these traits faithfully. Do not alter factual attributes like gender, age, race, class, equipment, or appearance. Focus on generating a rich and artistic portrait description for DALL·E without contradicting any values above.`;
 
   ui.notifications.info("Contacting GPT...");
 
-  let finalPrompt = basePrompt;
+  let optimized = basePrompt;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: {
@@ -73,15 +113,15 @@ Biography: ${(system.details?.biography?.value ?? "").replace(/<[^>]*>?/gm, "")}
       })
     });
     const d = await resp.json();
-    finalPrompt = d.choices?.[0]?.message?.content ?? basePrompt;
+    optimized = d.choices?.[0]?.message?.content ?? basePrompt;
   } catch (e) {
-    console.warn("GPT failed:", e);
-    ui.notifications.warn("GPT failed – using fallback prompt.");
+    console.error("GPT error:", e);
+    ui.notifications.warn("GPT failed – using raw prompt.");
   }
 
   new Dialog({
-    title: "AI Portrait Description",
-    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${finalPrompt}</textarea></form>`,
+    title: "AI Portrait Prompt",
+    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${optimized}</textarea></form>`,
     buttons: {
       generate: {
         label: "Generate",
@@ -98,9 +138,8 @@ Biography: ${(system.details?.biography?.value ?? "").replace(/<[^>]*>?/gm, "")}
                 "Content-Type": "application/json"
               },
               body: JSON.stringify({
-                prompt,
-                model: "dall-e-3",
-                n: 1, size: "1024x1792", response_format: "url"
+                prompt, model: "dall-e-3",
+                n: 1, size: "1024x1024", response_format: "url"
               })
             });
             const dd = await dalle.json();
@@ -108,27 +147,28 @@ Biography: ${(system.details?.biography?.value ?? "").replace(/<[^>]*>?/gm, "")}
             if (!imageUrl) throw new Error("No image URL.");
 
             const safeName = actor.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
-            const baseFilename = `ai-${safeName}.webp`;
-            const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(imageUrl))}&name=${baseFilename}`;
-            const blob = await (await fetch(proxyUrl)).blob();
-            const file = new File([blob], baseFilename, { type: blob.type });
-            const upload = await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
-            const fullPath = upload.path;
+            const filename = `portrait-${safeName}.webp`;
+            const b64 = btoa(imageUrl);
+            const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(b64)}&name=${filename}`;
 
-            const portraitPath = `${fullPath}.portrait.webp`;
-            const portraitCanvas = await createCroppedPortrait(blob);
-            const portraitUpload = await FilePicker.upload("data", "user/portraits", new File([portraitCanvas], `portrait-${safeName}.webp`), { overwrite: true });
+            const imgResp = await fetch(proxyUrl);
+            if (!imgResp.ok) throw new Error(`Proxy failed: ${imgResp.status}`);
+            const blob = await imgResp.blob();
+
+            const file = new File([blob], filename, { type: blob.type });
+            const upd = await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
+            const imagePath = upd.path;
 
             await actor.update({
-              img: `${portraitUpload.path}?cb=${Date.now()}`,
-              "prototypeToken.texture.src": `${fullPath}?cb=${Date.now()}`
+              img: `${imagePath}?cb=${Date.now()}`,
+              "prototypeToken.texture.src": `${imagePath}?cb=${Date.now()}`
             });
 
             actor.sheet.render(true);
-            ui.notifications.info("Portrait and Token updated.");
+            ui.notifications.info("Portrait and Token image updated.");
           } catch (e) {
             console.error("Image generation failed:", e);
-            ui.notifications.error("Image generation failed.");
+            ui.notifications.error("Portrait generation failed.");
           }
         }
       },
@@ -136,15 +176,4 @@ Biography: ${(system.details?.biography?.value ?? "").replace(/<[^>]*>?/gm, "")}
     },
     default: "generate"
   }).render(true);
-}
-
-async function createCroppedPortrait(blob) {
-  const bitmap = await createImageBitmap(blob);
-  const size = 1024;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(bitmap, 0, 0, size, size, 0, 0, size, size);
-  return await new Promise(res => canvas.toBlob(res, "image/webp"));
 }
