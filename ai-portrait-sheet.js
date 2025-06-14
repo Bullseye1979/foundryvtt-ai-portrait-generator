@@ -10,13 +10,12 @@ Hooks.once("init", () => {
 
   game.settings.register("ai-portrait-generator", "gptPrompt", {
     name: "GPT Prompt Template",
-    hint: "System prompt for GPT – generates visual prompt for DALL·E.",
+    hint: "System prompt for GPT – describes character appearance.",
     scope: "world", config: true, type: String, multiline: true,
-    default: `You are writing a prompt for DALL·E to generate a single vertical fantasy character image (1024×1792).
-Focus on realistic and vivid physical features, clothing, expression, and style.
-Do not mention RPG statistics or metadata.
-Ensure the character's face and upper body appear in the upper half of the image to allow portrait cropping later.
-Do not include background descriptions. The character should stand out clearly.`
+    default: `You are writing a prompt for DALL·E to generate a full-body fantasy character illustration with no background.
+Focus on realistic, visually rich descriptions based solely on the character’s physical appearance, mood, and attire.
+Do not include RPG terms, statistics, class names, or abstract personality traits.
+Ensure that the character’s head and shoulders appear in the upper part of the image.`
   });
 
   game.settings.register("ai-portrait-generator", "proxyUrl", {
@@ -28,13 +27,11 @@ Do not include background descriptions. The character should stand out clearly.`
 });
 
 Hooks.on("renderActorSheet", (app, html, data) => {
-  const actor = app.object;
+  const actor = app.actor;
   if (!actor || !actor.testUserPermission(game.user, "OWNER")) return;
-
-  const button = $(`<a class="ai-portrait-btn"><i class="fas fa-magic"></i> AI Portrait</a>`);
-  button.click(() => generatePortrait(actor));
-
-  html.closest('.app').find('.window-header .window-title').after(button);
+  const btn = $(`<a class="ai-portrait-generator"><i class="fas fa-magic"></i> Generate AI Portrait</a>`);
+  btn.click(() => generatePortrait(actor));
+  html.closest('.app').find('.window-title').after(btn);
 });
 
 async function generatePortrait(actor) {
@@ -44,33 +41,22 @@ async function generatePortrait(actor) {
   if (!apiKey) return ui.notifications.warn("Please set the OpenAI API key.");
 
   const { name, system, items } = actor;
-  const cls = items.find(i => i.type === "class")?.name ?? "";
-  const race = items.find(i => i.type === "race")?.name ?? "";
-  const gender = system.details?.gender ?? "";
-  const age = system.details?.age ?? "";
-  const height = system.details?.height ?? "";
-  const weight = system.details?.weight ?? "";
-  const eyes = system.details?.eyes ?? "";
-  const hair = system.details?.hair ?? "";
-  const skin = system.details?.skin ?? "";
-  const traits = system.details?.trait ?? "";
-  const appearance = system.details?.appearance ?? "";
-
   const basePrompt = `Name: ${name}
-Race: ${race}
-Gender: ${gender}
-Age: ${age}
-Height: ${height}
-Weight: ${weight}
-Eye Color: ${eyes}
-Hair: ${hair}
-Skin: ${skin}
-Class: ${cls}
-Traits: ${traits}
-Appearance: ${appearance}`;
+Race: ${items.find(i => i.type === "race")?.name ?? "Humanoid"}
+Gender: ${system.details?.gender ?? "Unknown"}
+Age: ${system.details?.age ?? "Unknown"}
+Height: ${system.details?.height ?? "Unknown"}
+Weight: ${system.details?.weight ?? "Unknown"}
+Eye Color: ${system.details?.eyes ?? "Unknown"}
+Hair: ${system.details?.hair ?? "Unknown"}
+Skin: ${system.details?.skin ?? "Unknown"}
+Appearance: ${system.details?.appearance ?? ""}
+Equipment: ${items.filter(i => ["weapon", "equipment", "armor"].includes(i.type)).map(i => i.name).slice(0, 5).join(", ") || "None"}
+Biography: ${(system.details?.biography?.value ?? "").replace(/<[^>]*>?/gm, "")}`;
 
   ui.notifications.info("Contacting GPT...");
-  let visualPrompt = basePrompt;
+
+  let finalPrompt = basePrompt;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: {
@@ -86,16 +72,16 @@ Appearance: ${appearance}`;
         temperature: 0.7, max_tokens: 400
       })
     });
-    const data = await resp.json();
-    visualPrompt = data.choices?.[0]?.message?.content ?? basePrompt;
+    const d = await resp.json();
+    finalPrompt = d.choices?.[0]?.message?.content ?? basePrompt;
   } catch (e) {
-    console.error("GPT error:", e);
-    ui.notifications.warn("GPT failed – using raw prompt.");
+    console.warn("GPT failed:", e);
+    ui.notifications.warn("GPT failed – using fallback prompt.");
   }
 
   new Dialog({
-    title: "AI Portrait Prompt",
-    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${visualPrompt}</textarea></form>`,
+    title: "AI Portrait Description",
+    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${finalPrompt}</textarea></form>`,
     buttons: {
       generate: {
         label: "Generate",
@@ -114,33 +100,28 @@ Appearance: ${appearance}`;
               body: JSON.stringify({
                 prompt,
                 model: "dall-e-3",
-                n: 1,
-                size: "1024x1792",
-                response_format: "url"
+                n: 1, size: "1024x1792", response_format: "url"
               })
             });
-
-            const result = await dalle.json();
-            const imageUrl = result.data?.[0]?.url;
-            if (!imageUrl) throw new Error("No image URL received.");
+            const dd = await dalle.json();
+            const imageUrl = dd.data?.[0]?.url;
+            if (!imageUrl) throw new Error("No image URL.");
 
             const safeName = actor.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
-            const filename = `full-${safeName}.webp`;
-            const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(imageUrl))}&name=${filename}`;
+            const baseFilename = `ai-${safeName}.webp`;
+            const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(imageUrl))}&name=${baseFilename}`;
             const blob = await (await fetch(proxyUrl)).blob();
+            const file = new File([blob], baseFilename, { type: blob.type });
+            const upload = await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
+            const fullPath = upload.path;
 
-            // Crop top square portion for portrait
-            const portraitBlob = await cropTopSquare(blob);
-            const portraitFile = new File([portraitBlob], `portrait-${safeName}.webp`, { type: "image/webp" });
-            const portraitUpload = await FilePicker.upload("data", "user/portraits", portraitFile, { overwrite: true });
-
-            // Upload full image as token
-            const tokenFile = new File([blob], `token-${safeName}.webp`, { type: "image/webp" });
-            const tokenUpload = await FilePicker.upload("data", "user/portraits", tokenFile, { overwrite: true });
+            const portraitPath = `${fullPath}.portrait.webp`;
+            const portraitCanvas = await createCroppedPortrait(blob);
+            const portraitUpload = await FilePicker.upload("data", "user/portraits", new File([portraitCanvas], `portrait-${safeName}.webp`), { overwrite: true });
 
             await actor.update({
               img: `${portraitUpload.path}?cb=${Date.now()}`,
-              "prototypeToken.texture.src": `${tokenUpload.path}?cb=${Date.now()}`
+              "prototypeToken.texture.src": `${fullPath}?cb=${Date.now()}`
             });
 
             actor.sheet.render(true);
@@ -157,20 +138,13 @@ Appearance: ${appearance}`;
   }).render(true);
 }
 
-async function cropTopSquare(blob) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const size = img.width;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, size, size, 0, 0, size, size);
-      canvas.toBlob(resolve, "image/webp");
-    };
-    img.onerror = reject;
-    img.src = URL.createObjectURL(blob);
-  });
+async function createCroppedPortrait(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const size = 1024;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, size, size, 0, 0, size, size);
+  return await new Promise(res => canvas.toBlob(res, "image/webp"));
 }
