@@ -13,23 +13,22 @@ Hooks.once("init", () => {
     hint: "System prompt for GPT – enhances the character for DALL·E portrait.",
     scope: "world", config: true, type: String, multiline: true,
     default: `You are writing a prompt for DALL·E to generate a character portrait for a fantasy RPG.
-              Focus on realistic, visually rich descriptions (e.g., appearance, mood, pose, lighting, environment, and art style).
-              Do not include any game-specific statistics, traits, class names, background labels, alignment, or similar metadata.
-              Do not mention the word "portrait" in the prompt.
-              Your task is to produce a short visual description of the character based only on their appearance and personality, not rules.
-`
+Focus on realistic, visually rich descriptions (e.g., appearance, mood, pose, lighting, environment, and art style).
+Do not include any game-specific statistics, traits, class names, background labels, alignment, or similar metadata.
+Do not mention the word "portrait" in the prompt.
+Your task is to produce a short visual description of the character based only on their appearance and personality, not rules.`
   });
 
-  game.settings.register("ai-portrait-generator", "tokenPrompt", { // NEW
+  game.settings.register("ai-portrait-generator", "tokenPrompt", {
     name: "GPT Prompt Template (Token)",
     hint: "System prompt for GPT – adapts the description to generate a token with transparent background.",
     scope: "world", config: true, type: String, multiline: true,
     default: `You are writing a prompt for DALL·E to generate a full-body fantasy character illustration with no background.
-              The image should depict the same person as in the original description, standing in a neutral or slightly dynamic pose, suitable for use as a cut-out or game token.
-              Do not use the word “token” or any technical terms.
-              Do not include any RPG class, level, alignment, or background information.
-              Describe only visual and physical traits of the character (clothing, body, style, colors, etc.).
-              Specify "white or plain background" to make it easier to extract the character later.`
+Use the provided description to match the appearance of a character previously depicted in a portrait.
+Ensure that clothing, facial features, body type, hairstyle, and colors closely resemble the original description.
+Do not invent or modify traits.
+Describe only physical details. Avoid game-related terms. 
+Specify a neutral stance and white or plain background to make cut-out extraction easier.`
   });
 
   game.settings.register("ai-portrait-generator", "proxyUrl", {
@@ -45,8 +44,10 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
   if (!actor || !actor.testUserPermission(game.user, "OWNER")) return;
   controls.push({
     name: "ai-portrait",
-    icon: "fas fa-magic", label: "Generate AI Portrait",
-    title: "Generate AI Portrait", button: true,
+    icon: "fas fa-magic",
+    label: "Generate AI Portrait",
+    title: "Generate AI Portrait",
+    button: true,
     onClick: () => generatePortrait(actor)
   });
 });
@@ -54,7 +55,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
 async function generatePortrait(actor) {
   const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
   const gptPrompt = game.settings.get("ai-portrait-generator", "gptPrompt");
-  const tokenPrompt = game.settings.get("ai-portrait-generator", "tokenPrompt"); // NEW
+  const tokenPrompt = game.settings.get("ai-portrait-generator", "tokenPrompt");
   const proxyBase = game.settings.get("ai-portrait-generator", "proxyUrl")?.trim().replace(/\/+$/, "");
   if (!apiKey) return ui.notifications.warn("Please set the OpenAI API key.");
 
@@ -113,7 +114,8 @@ Biography: ${bio}`;
   let portraitPrompt = basePrompt;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST", headers: {
+      method: "POST",
+      headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
@@ -123,7 +125,8 @@ Biography: ${bio}`;
           { role: "system", content: gptPrompt },
           { role: "user", content: basePrompt }
         ],
-        temperature: 0.7, max_tokens: 400
+        temperature: 0.7,
+        max_tokens: 400
       })
     });
     const d = await resp.json();
@@ -147,13 +150,17 @@ Biography: ${bio}`;
 
           try {
             const dalle = await fetch("https://api.openai.com/v1/images/generations", {
-              method: "POST", headers: {
+              method: "POST",
+              headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json"
               },
               body: JSON.stringify({
-                prompt, model: "dall-e-3",
-                n: 1, size: "1024x1024", response_format: "url"
+                prompt,
+                model: "dall-e-3",
+                n: 1,
+                size: "1024x1024",
+                response_format: "url"
               })
             });
             const dd = await dalle.json();
@@ -168,12 +175,13 @@ Biography: ${bio}`;
             const portraitUpload = await FilePicker.upload("data", "user/portraits", portraitFile, { overwrite: true });
             const portraitPath = portraitUpload.path;
 
-            // NOW generate token image using the portraitPrompt
+            // NOW generate token image using original basePrompt
             ui.notifications.info("Contacting GPT for Token prompt...");
-            let tokenFinalPrompt = prompt;
+            let tokenFinalPrompt = basePrompt;
             try {
               const tokenResp = await fetch("https://api.openai.com/v1/chat/completions", {
-                method: "POST", headers: {
+                method: "POST",
+                headers: {
                   "Authorization": `Bearer ${apiKey}`,
                   "Content-Type": "application/json"
                 },
@@ -181,28 +189,32 @@ Biography: ${bio}`;
                   model: "gpt-3.5-turbo",
                   messages: [
                     { role: "system", content: tokenPrompt },
-                    { role: "user", content: prompt }
+                    { role: "user", content: `This is the original character description:\n\n${basePrompt}\n\nPlease use it to create a matching full-body image.` }
                   ],
-                  temperature: 0.7, max_tokens: 400
+                  temperature: 0.7,
+                  max_tokens: 400
                 })
               });
               const td = await tokenResp.json();
-              tokenFinalPrompt = td.choices?.[0]?.message?.content ?? prompt;
+              tokenFinalPrompt = td.choices?.[0]?.message?.content ?? basePrompt;
             } catch (e) {
-              console.warn("Token GPT failed – using same prompt.");
+              console.warn("Token GPT failed – using base prompt.");
             }
 
             ui.notifications.info("Requesting token image from DALL·E...");
 
             const tokenImage = await fetch("https://api.openai.com/v1/images/generations", {
-              method: "POST", headers: {
+              method: "POST",
+              headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json"
               },
               body: JSON.stringify({
                 prompt: tokenFinalPrompt,
                 model: "dall-e-3",
-                n: 1, size: "1024x1024", response_format: "url"
+                n: 1,
+                size: "1024x1792", // <-- Hochformat
+                response_format: "url"
               })
             });
             const tokenJson = await tokenImage.json();
