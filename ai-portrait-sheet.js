@@ -9,12 +9,21 @@ Hooks.once("init", () => {
   });
 
   game.settings.register("ai-portrait-generator", "gptPrompt", {
-    name: "GPT Prompt Template",
-    hint: "System prompt for GPT – defines how to enhance the character.",
+    name: "GPT Prompt Template (Portrait)",
+    hint: "System prompt for GPT – enhances the character for DALL·E portrait.",
     scope: "world", config: true, type: String, multiline: true,
     default: `You are enhancing a prompt for DALL·E to generate a portrait of a D&D character.
 Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, equipment, eye color, hair, skin tone, height, weight, personality traits, ideals, bonds, flaws, faith, kin, appearance, or biography.
 You may add atmosphere, lighting, pose, art style – but not change or invent anything about the character.`
+  });
+
+  game.settings.register("ai-portrait-generator", "tokenPrompt", { // NEW
+    name: "GPT Prompt Template (Token)",
+    hint: "System prompt for GPT – adapts the description to generate a token with transparent background.",
+    scope: "world", config: true, type: String, multiline: true,
+    default: `You are enhancing a prompt for DALL·E to generate a full-body token image with transparent background.
+Do not change the character’s description. The image should match the previously generated portrait.
+Focus on full-body view, neutral stance, top-down lighting. No background. Style: fantasy token, clean outline.`
   });
 
   game.settings.register("ai-portrait-generator", "proxyUrl", {
@@ -39,6 +48,7 @@ Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
 async function generatePortrait(actor) {
   const apiKey = game.settings.get("ai-portrait-generator", "apiKey");
   const gptPrompt = game.settings.get("ai-portrait-generator", "gptPrompt");
+  const tokenPrompt = game.settings.get("ai-portrait-generator", "tokenPrompt"); // NEW
   const proxyBase = game.settings.get("ai-portrait-generator", "proxyUrl")?.trim().replace(/\/+$/, "");
   if (!apiKey) return ui.notifications.warn("Please set the OpenAI API key.");
 
@@ -90,13 +100,11 @@ Ideals: ${ideals}
 Bonds: ${bonds}
 Flaws: ${flaws}
 Appearance: ${appearance}
-Biography: ${bio}
-
-Description should reflect these traits faithfully. Do not alter factual attributes like gender, age, race, class, equipment, or appearance. Focus on generating a rich and artistic portrait description for DALL·E without contradicting any values above.`;
+Biography: ${bio}`;
 
   ui.notifications.info("Contacting GPT...");
 
-  let optimized = basePrompt;
+  let portraitPrompt = basePrompt;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: {
@@ -113,7 +121,7 @@ Description should reflect these traits faithfully. Do not alter factual attribu
       })
     });
     const d = await resp.json();
-    optimized = d.choices?.[0]?.message?.content ?? basePrompt;
+    portraitPrompt = d.choices?.[0]?.message?.content ?? basePrompt;
   } catch (e) {
     console.error("GPT error:", e);
     ui.notifications.warn("GPT failed – using raw prompt.");
@@ -121,7 +129,7 @@ Description should reflect these traits faithfully. Do not alter factual attribu
 
   new Dialog({
     title: "AI Portrait Prompt",
-    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${optimized}</textarea></form>`,
+    content: `<form><textarea id="prompt-text" rows="10" style="width:100%;">${portraitPrompt}</textarea></form>`,
     buttons: {
       generate: {
         label: "Generate",
@@ -143,32 +151,75 @@ Description should reflect these traits faithfully. Do not alter factual attribu
               })
             });
             const dd = await dalle.json();
-            const imageUrl = dd.data?.[0]?.url;
-            if (!imageUrl) throw new Error("No image URL.");
+            const portraitUrl = dd.data?.[0]?.url;
+            if (!portraitUrl) throw new Error("No image URL.");
 
             const safeName = actor.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
-            const filename = `portrait-${safeName}.webp`;
-            const b64 = btoa(imageUrl);
-            const proxyUrl = `${proxyBase}/?b64=${encodeURIComponent(b64)}&name=${filename}`;
+            const portraitFilename = `portrait-${safeName}.webp`;
+            const portraitProxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(portraitUrl))}&name=${portraitFilename}`;
+            const portraitBlob = await (await fetch(portraitProxyUrl)).blob();
+            const portraitFile = new File([portraitBlob], portraitFilename, { type: portraitBlob.type });
+            const portraitUpload = await FilePicker.upload("data", "user/portraits", portraitFile, { overwrite: true });
+            const portraitPath = portraitUpload.path;
 
-            const imgResp = await fetch(proxyUrl);
-            if (!imgResp.ok) throw new Error(`Proxy failed: ${imgResp.status}`);
-            const blob = await imgResp.blob();
+            // NOW generate token image using the portraitPrompt
+            ui.notifications.info("Contacting GPT for Token prompt...");
+            let tokenFinalPrompt = prompt;
+            try {
+              const tokenResp = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST", headers: {
+                  "Authorization": `Bearer ${apiKey}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  model: "gpt-3.5-turbo",
+                  messages: [
+                    { role: "system", content: tokenPrompt },
+                    { role: "user", content: prompt }
+                  ],
+                  temperature: 0.7, max_tokens: 400
+                })
+              });
+              const td = await tokenResp.json();
+              tokenFinalPrompt = td.choices?.[0]?.message?.content ?? prompt;
+            } catch (e) {
+              console.warn("Token GPT failed – using same prompt.");
+            }
 
-            const file = new File([blob], filename, { type: blob.type });
-            const upd = await FilePicker.upload("data", "user/portraits", file, { overwrite: true });
-            const imagePath = upd.path;
+            ui.notifications.info("Requesting token image from DALL·E...");
+
+            const tokenImage = await fetch("https://api.openai.com/v1/images/generations", {
+              method: "POST", headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                prompt: tokenFinalPrompt,
+                model: "dall-e-3",
+                n: 1, size: "1024x1024", response_format: "url"
+              })
+            });
+            const tokenJson = await tokenImage.json();
+            const tokenUrl = tokenJson.data?.[0]?.url;
+            if (!tokenUrl) throw new Error("No token image URL.");
+
+            const tokenFilename = `token-${safeName}.webp`;
+            const tokenProxyUrl = `${proxyBase}/?b64=${encodeURIComponent(btoa(tokenUrl))}&name=${tokenFilename}`;
+            const tokenBlob = await (await fetch(tokenProxyUrl)).blob();
+            const tokenFile = new File([tokenBlob], tokenFilename, { type: tokenBlob.type });
+            const tokenUpload = await FilePicker.upload("data", "user/portraits", tokenFile, { overwrite: true });
+            const tokenPath = tokenUpload.path;
 
             await actor.update({
-              img: `${imagePath}?cb=${Date.now()}`,
-              "prototypeToken.texture.src": `${imagePath}?cb=${Date.now()}`
+              img: `${portraitPath}?cb=${Date.now()}`,
+              "prototypeToken.texture.src": `${tokenPath}?cb=${Date.now()}`
             });
 
             actor.sheet.render(true);
             ui.notifications.info("Portrait and Token image updated.");
           } catch (e) {
             console.error("Image generation failed:", e);
-            ui.notifications.error("Portrait generation failed.");
+            ui.notifications.error("Image generation failed.");
           }
         }
       },
