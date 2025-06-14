@@ -12,18 +12,24 @@ Hooks.once("init", () => {
     name: "GPT Prompt Template (Portrait)",
     hint: "System prompt for GPT – enhances the character for DALL·E portrait.",
     scope: "world", config: true, type: String, multiline: true,
-    default: `You are enhancing a prompt for DALL·E to generate a portrait of a D&D character.
-Do not change any of the following: name, race, gender, age, class, subclass, alignment, background, level, equipment, eye color, hair, skin tone, height, weight, personality traits, ideals, bonds, flaws, faith, kin, appearance, or biography.
-You may add atmosphere, lighting, pose, art style – but not change or invent anything about the character.`
+    default: `You are writing a prompt for DALL·E to generate a character portrait for a fantasy RPG.
+              Focus on realistic, visually rich descriptions (e.g., appearance, mood, pose, lighting, environment, and art style).
+              Do not include any game-specific statistics, traits, class names, background labels, alignment, or similar metadata.
+              Do not mention the word "portrait" in the prompt.
+              Your task is to produce a short visual description of the character based only on their appearance and personality, not rules.
+`
   });
 
   game.settings.register("ai-portrait-generator", "tokenPrompt", { // NEW
     name: "GPT Prompt Template (Token)",
     hint: "System prompt for GPT – adapts the description to generate a token with transparent background.",
     scope: "world", config: true, type: String, multiline: true,
-    default: `You are enhancing a prompt for DALL·E to generate a full-body token image with transparent background.
-Do not change the character’s description. The image should match the previously generated portrait.
-Focus on full-body view, neutral stance, top-down lighting. No background. Style: fantasy token, clean outline.`
+    default: `You are writing a prompt for DALL·E to generate a full-body fantasy character illustration with no background.
+              The image should depict the same person as in the original description, standing in a neutral or slightly dynamic pose, suitable for use as a cut-out or game token.
+              Do not use the word “token” or any technical terms.
+              Do not include any RPG class, level, alignment, or background information.
+              Describe only visual and physical traits of the character (clothing, body, style, colors, etc.).
+              Specify "white or plain background" to make it easier to extract the character later.`
   });
 
   game.settings.register("ai-portrait-generator", "proxyUrl", {
